@@ -8,18 +8,19 @@ help:
 
 bootstrap:
 	$(GO) mod download
-	cd web && $(PNPM) install --frozen-lockfile
+	$(PNPM) install --frozen-lockfile
 
 fmt:
 	$(GO) fmt ./...
 
 lint:
 	$(GO) vet ./...
-	cd web && $(PNPM) lint && $(PNPM) typecheck
+	$(PNPM) --filter kdiag-web lint
+	$(PNPM) --filter kdiag-web typecheck
 
 test:
 	$(GO) test ./...
-	cd web && $(PNPM) test -- --run
+	$(PNPM) --filter kdiag-web test --run
 
 test-integration:
 	$(GO) test -tags=integration ./internal/repository/...
@@ -27,7 +28,7 @@ test-integration:
 build:
 	$(GO) build -o bin/kdiag-api ./cmd/kdiag-api
 	$(GO) build -o bin/kdiag ./cmd/kdiag
-	cd web && $(PNPM) build
+	$(PNPM) --filter kdiag-web build
 
 docker-build:
 	docker build -f deploy/docker/api.Dockerfile -t kdiag-api:dev .
@@ -55,4 +56,3 @@ security:
 	govulncheck ./...
 	gosec ./...
 	gitleaks detect --source .
-

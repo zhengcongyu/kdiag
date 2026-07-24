@@ -5,9 +5,13 @@
 /work/
 /.tools/
 /web/node_modules/
+/node_modules/
 /web/dist/
 *.out
 *.test
+*.tsbuildinfo
+/web/vite.config.js
+/web/vite.config.d.ts
 
 # Secrets and cluster credentials
 .env

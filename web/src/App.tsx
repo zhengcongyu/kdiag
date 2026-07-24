@@ -1,0 +1,23 @@
+import {Navigate, Route, Routes} from "react-router-dom";
+import {AppShell} from "./components/AppShell";
+import {DiagnosePage} from "./pages/DiagnosePage";
+import {IncidentDetailPage} from "./pages/IncidentDetailPage";
+import {IncidentsPage} from "./pages/IncidentsPage";
+import {NetworkPage} from "./pages/NetworkPage";
+import {OverviewPage} from "./pages/OverviewPage";
+import {ReplayPage} from "./pages/ReplayPage";
+
+export function App() {
+  return <Routes>
+    <Route element={<AppShell />}>
+      <Route index element={<OverviewPage />} />
+      <Route path="incidents" element={<IncidentsPage />} />
+      <Route path="incidents/:id" element={<IncidentDetailPage />} />
+      <Route path="diagnose" element={<DiagnosePage />} />
+      <Route path="network" element={<NetworkPage />} />
+      <Route path="replay" element={<ReplayPage />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Route>
+  </Routes>;
+}
+
