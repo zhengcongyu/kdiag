@@ -65,7 +65,9 @@ func TestDiagnosisSSE(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&task); err != nil {
 		t.Fatal(err)
 	}
-	response.Body.Close()
+	if err := response.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if response.StatusCode != http.StatusAccepted {
 		t.Fatalf("got %d", response.StatusCode)
 	}
