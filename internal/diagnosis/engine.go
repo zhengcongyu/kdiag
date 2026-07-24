@@ -47,7 +47,7 @@ func (e *Engine) Run(ctx context.Context, task *model.DiagnosisTask, observation
 	}
 	now := time.Now().UTC()
 	task.Status, task.StartedAt = model.StatusRunning, &now
-	sink.Publish(Event{Type: "task_started", Data: task})
+	sink.Publish(Event{Type: "task_started", Data: *task})
 	completed := map[string]bool{}
 	for len(completed) < len(e.nodes) {
 		progress := false
@@ -92,7 +92,7 @@ func (e *Engine) Run(ctx context.Context, task *model.DiagnosisTask, observation
 	}
 	finished := time.Now().UTC()
 	task.Status, task.FinishedAt = model.StatusCompleted, &finished
-	sink.Publish(Event{Type: "diagnosis_completed", Data: task})
+	sink.Publish(Event{Type: "diagnosis_completed", Data: *task})
 	return nil
 }
 

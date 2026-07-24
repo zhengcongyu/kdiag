@@ -185,6 +185,7 @@ func (s *Server) createDiagnosis(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.cancels[task.ID] = cancel
 	s.mu.Unlock()
+	acceptedTask := task
 	go func() {
 		defer func() {
 			s.mu.Lock()
@@ -201,7 +202,7 @@ func (s *Server) createDiagnosis(w http.ResponseWriter, r *http.Request) {
 		defer persistCancel()
 		_ = s.repository.SaveTask(persistCtx, task)
 	}()
-	writeJSON(w, http.StatusAccepted, task)
+	writeJSON(w, http.StatusAccepted, acceptedTask)
 }
 
 type networkDiagnosisRequest struct {
@@ -234,6 +235,7 @@ func (s *Server) createNetworkDiagnosis(w http.ResponseWriter, r *http.Request) 
 	s.mu.Lock()
 	s.cancels[task.ID] = cancel
 	s.mu.Unlock()
+	acceptedTask := task
 	go func() {
 		defer func() {
 			s.mu.Lock()
@@ -288,7 +290,7 @@ func (s *Server) createNetworkDiagnosis(w http.ResponseWriter, r *http.Request) 
 		_ = s.repository.SaveTask(persistCtx, task)
 		s.hub.publish(task.ID, diagnosis.Event{Type: "diagnosis_completed", Data: task})
 	}()
-	writeJSON(w, http.StatusAccepted, task)
+	writeJSON(w, http.StatusAccepted, acceptedTask)
 }
 
 func (s *Server) getDiagnosis(w http.ResponseWriter, r *http.Request) {
