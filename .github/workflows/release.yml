@@ -26,7 +26,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter kdiag-web test --run
       - run: pnpm --filter kdiag-web build
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
       - run: helm lint deploy/helm/kdiag
 
   artifacts:
@@ -91,7 +91,7 @@ jobs:
           pattern: binaries-*
           merge-multiple: true
           path: dist
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
       - run: helm package deploy/helm/kdiag --destination dist
       - run: sha256sum dist/* > dist/SHA256SUMS
       - uses: softprops/action-gh-release@v2
