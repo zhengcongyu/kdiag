@@ -66,14 +66,14 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/docker/api.Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/kdiag-api:${{ github.ref_name }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/docker/web.Dockerfile
