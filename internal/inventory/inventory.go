@@ -273,7 +273,7 @@ func NewAuto(logger *slog.Logger) (*Manager, error) {
 	}
 	connection := Connection{
 		Name: name, Status: "syncing", Mode: mode, Server: config.Host,
-		ServerVersion: version, Message: "???? Kubernetes API ??",
+		ServerVersion: version, Message: "正在同步 Kubernetes API 缓存",
 	}
 	store := NewStore(connection)
 	store.SetAccess(access)
@@ -317,7 +317,7 @@ func (m *Manager) Run(ctx context.Context) {
 	}
 	connection := m.store.Connection()
 	connection.Status = "connected"
-	connection.Message = "Informer ?????"
+	connection.Message = "Informer 缓存已同步"
 	connection.SyncedAt = time.Now().UTC()
 	m.store.SetConnection(connection)
 	m.logger.Info("kubernetes_inventory_synced", "cluster", connection.Name, "version", connection.ServerVersion)
@@ -327,7 +327,7 @@ func (m *Manager) Run(ctx context.Context) {
 func (m *Manager) fail(err error) {
 	connection := m.store.Connection()
 	connection.Status = "degraded"
-	connection.Message = "Kubernetes ???????" + err.Error()
+	connection.Message = "Kubernetes 缓存同步失败：" + err.Error()
 	m.store.SetConnection(connection)
 	m.logger.Error("kubernetes_inventory_failed", "error", err)
 }
@@ -508,12 +508,12 @@ func summarize(resource model.Resource, all []model.Resource) (state, text, read
 		for _, condition := range nestedSlice(status, "conditions") {
 			if stringValue(condition["type"]) == "Ready" {
 				if stringValue(condition["status"]) == "True" {
-					return StateHealthy, "??", "1/1", "", nodeAddress(status), "?? Ready ??? True"
+					return StateHealthy, "就绪", "1/1", "", nodeAddress(status), "节点 Ready 条件为 True"
 				}
-				return StateCritical, "???", "0/1", "", nodeAddress(status), "?? Ready ???? True"
+				return StateCritical, "未就绪", "0/1", "", nodeAddress(status), "节点 Ready 条件不为 True"
 			}
 		}
-		return StateUnknown, "?? Ready ??", "", "", nodeAddress(status), "??????????"
+		return StateUnknown, "缺少 Ready 条件", "", "", nodeAddress(status), "无法确认节点就绪状态"
 	case "Pod":
 		node, ip = stringValue(spec["nodeName"]), stringValue(status["podIP"])
 		phase := stringValue(status["phase"])
@@ -526,24 +526,24 @@ func summarize(resource model.Resource, all []model.Resource) (state, text, read
 			if waiting := nestedMap(container, "state", "waiting"); waiting != nil {
 				reason := stringValue(waiting["reason"])
 				if reason != "" && reason != "ContainerCreating" && reason != "PodInitializing" {
-					return StateCritical, reason, fmt.Sprintf("%d/%d", readyCount, len(containerStatuses)), node, ip, "???? " + reason
+					return StateCritical, reason, fmt.Sprintf("%d/%d", readyCount, len(containerStatuses)), node, ip, "容器处于 " + reason
 				}
 			}
 		}
 		ready = fmt.Sprintf("%d/%d", readyCount, len(containerStatuses))
 		if phase == "Succeeded" {
-			return StateHealthy, "???", ready, node, ip, "Pod ?????"
+			return StateHealthy, "已完成", ready, node, ip, "Pod 已成功完成"
 		}
 		if phase == "Failed" {
-			return StateCritical, "??", ready, node, ip, "Pod phase ? Failed"
+			return StateCritical, "失败", ready, node, ip, "Pod phase 为 Failed"
 		}
 		if phase == "Running" && len(containerStatuses) > 0 && readyCount == len(containerStatuses) {
-			return StateHealthy, "??", ready, node, ip, "???????"
+			return StateHealthy, "就绪", ready, node, ip, "所有容器已就绪"
 		}
 		if phase == "Pending" {
-			return StateWarning, "???", ready, node, ip, "Pod ?????????"
+			return StateWarning, "等待中", ready, node, ip, "Pod 仍在等待调度或启动"
 		}
-		return StateWarning, "???", ready, node, ip, "Pod ??????"
+		return StateWarning, "未就绪", ready, node, ip, "Pod 尚未全部就绪"
 	case "Deployment", "StatefulSet", "ReplicaSet":
 		desired := intValue(spec["replicas"])
 		available := intValue(status["availableReplicas"])
@@ -552,67 +552,67 @@ func summarize(resource model.Resource, all []model.Resource) (state, text, read
 		}
 		ready = fmt.Sprintf("%d/%d", available, desired)
 		if desired == 0 {
-			return StateHealthy, "???", ready, "", "", "????? 0"
+			return StateHealthy, "已缩容", ready, "", "", "期望副本为 0"
 		}
 		if desired > 0 && available >= desired {
-			return StateHealthy, "??", ready, "", "", "????????"
+			return StateHealthy, "可用", ready, "", "", "期望副本均已可用"
 		}
 		if available == 0 && desired > 0 {
-			return StateCritical, "???", ready, "", "", "??????"
+			return StateCritical, "不可用", ready, "", "", "没有可用副本"
 		}
-		return StateWarning, "????", ready, "", "", "?????????"
+		return StateWarning, "部分可用", ready, "", "", "可用副本少于期望值"
 	case "DaemonSet":
 		desired, available := intValue(status["desiredNumberScheduled"]), intValue(status["numberAvailable"])
 		ready = fmt.Sprintf("%d/%d", available, desired)
 		if desired > 0 && available >= desired {
-			return StateHealthy, "??", ready, "", "", "?????????? Pod"
+			return StateHealthy, "可用", ready, "", "", "所有目标节点均有可用 Pod"
 		}
-		return StateWarning, "????", ready, "", "", "?????????? Pod"
+		return StateWarning, "部分可用", ready, "", "", "部分目标节点没有可用 Pod"
 	case "Service":
 		clusterIP := stringValue(spec["clusterIP"])
 		readyEndpoints, totalEndpoints := endpointCounts(resource, all)
 		ready = fmt.Sprintf("%d/%d", readyEndpoints, totalEndpoints)
 		if stringValue(spec["type"]) == "ExternalName" {
-			return StateHealthy, "????", "", "", stringValue(spec["externalName"]), "ExternalName Service ??? EndpointSlice"
+			return StateHealthy, "外部名称", "", "", stringValue(spec["externalName"]), "ExternalName Service 不使用 EndpointSlice"
 		}
 		if totalEndpoints == 0 {
-			return StateCritical, "???", ready, "", clusterIP, "Service ????????????? Pod"
+			return StateCritical, "无端点", ready, "", clusterIP, "Service 当前没有可以接收请求的后端 Pod"
 		}
 		if readyEndpoints == 0 {
-			return StateCritical, "?????", ready, "", clusterIP, "EndpointSlice ? Ready Endpoint ??? 0"
+			return StateCritical, "端点未就绪", ready, "", clusterIP, "EndpointSlice 中 Ready Endpoint 数量为 0"
 		}
 		if readyEndpoints < totalEndpoints {
-			return StateWarning, "????", ready, "", clusterIP, "?? Endpoint ????"
+			return StateWarning, "部分就绪", ready, "", clusterIP, "部分 Endpoint 尚未就绪"
 		}
-		return StateHealthy, "????", ready, "", clusterIP, "?? Endpoint ????"
+		return StateHealthy, "端点就绪", ready, "", clusterIP, "所有 Endpoint 均已就绪"
 	case "EndpointSlice":
 		readyEndpoints, totalEndpoints := sliceEndpointCounts(spec)
 		ready = fmt.Sprintf("%d/%d", readyEndpoints, totalEndpoints)
 		if totalEndpoints == 0 || readyEndpoints == 0 {
-			return StateCritical, "?????", ready, "", "", "?? Ready Endpoint"
+			return StateCritical, "无就绪端点", ready, "", "", "没有 Ready Endpoint"
 		}
 		if readyEndpoints < totalEndpoints {
-			return StateWarning, "????", ready, "", "", "?? Endpoint ????"
+			return StateWarning, "部分就绪", ready, "", "", "部分 Endpoint 尚未就绪"
 		}
-		return StateHealthy, "????", ready, "", "", "EndpointSlice ?????"
+		return StateHealthy, "端点就绪", ready, "", "", "EndpointSlice 有可用后端"
 	case "PersistentVolumeClaim":
 		phase := stringValue(status["phase"])
 		if phase == "Bound" {
-			return StateHealthy, "???", "1/1", "", stringValue(spec["volumeName"]), "PVC ???? PersistentVolume"
+			return StateHealthy, "已绑定", "1/1", "", stringValue(spec["volumeName"]), "PVC 已绑定到 PersistentVolume"
 		}
 		if phase == "Lost" {
-			return StateCritical, "???", "0/1", "", "", "PVC ?????"
+			return StateCritical, "已丢失", "0/1", "", "", "PVC 绑定已丢失"
 		}
-		return StateWarning, valueOr(phase, "???"), "0/1", "", "", "PVC ????"
+		return StateWarning, valueOr(phase, "等待中"), "0/1", "", "", "PVC 尚未绑定"
 	case "PersistentVolume":
 		phase := stringValue(status["phase"])
 		if phase == "Bound" || phase == "Available" {
-			return StateHealthy, phase, "", "", "", "PersistentVolume ??"
+			return StateHealthy, phase, "", "", "", "PersistentVolume 可用"
 		}
 		if phase == "Failed" {
-			return StateCritical, "??", "", "", "", "PersistentVolume phase ? Failed"
+			return StateCritical, "失败", "", "", "", "PersistentVolume phase 为 Failed"
 		}
-		return StateWarning, valueOr(phase, "??"), "", "", "", "PersistentVolume ??????"
+		return StateWarning, valueOr(phase, "未知"), "", "", "", "PersistentVolume 状态需要检查"
 	case "Job":
 		completions := intValue(spec["completions"])
 		if completions == 0 {
@@ -621,59 +621,59 @@ func summarize(resource model.Resource, all []model.Resource) (state, text, read
 		succeeded, failed := intValue(status["succeeded"]), intValue(status["failed"])
 		ready = fmt.Sprintf("%d/%d", succeeded, completions)
 		if failed > 0 {
-			return StateCritical, "??", ready, "", "", "Job ???? Pod"
+			return StateCritical, "失败", ready, "", "", "Job 有失败的 Pod"
 		}
 		if succeeded >= completions {
-			return StateHealthy, "???", ready, "", "", "Job ??????"
+			return StateHealthy, "已完成", ready, "", "", "Job 已达到完成数"
 		}
-		return StateWarning, "???", ready, "", "", "Job ????"
+		return StateWarning, "运行中", ready, "", "", "Job 尚未完成"
 	case "ConfigMap":
-		return StateObserved, "???", "", "", "", "????????ConfigMap ???????? Condition"
+		return StateObserved, "已采集", "", "", "", "配置对象已采集；ConfigMap 本身没有通用健康 Condition"
 	case "CronJob":
 		if suspended, _ := spec["suspend"].(bool); suspended {
-			return StateObserved, "???", "", "", "", "CronJob ??????"
+			return StateObserved, "已暂停", "", "", "", "CronJob 已由用户暂停"
 		}
 		active := len(nestedSlice(status, "active"))
 		if active > 0 {
-			return StateHealthy, "?????", fmt.Sprintf("%d active", active), "", "", "CronJob ????? Job"
+			return StateHealthy, "任务运行中", fmt.Sprintf("%d active", active), "", "", "CronJob 当前有活动 Job"
 		}
-		return StateObserved, "?????", "", "", "", "CronJob ???????????? Job"
+		return StateObserved, "计划已加载", "", "", "", "CronJob 计划已采集；当前没有活动 Job"
 	case "Ingress":
 		addresses := nestedSlice(status, "loadBalancer", "ingress")
 		if len(addresses) > 0 {
-			return StateHealthy, "?????", fmt.Sprintf("%d", len(addresses)), "", "", "Ingress ?????????"
+			return StateHealthy, "地址已分配", fmt.Sprintf("%d", len(addresses)), "", "", "Ingress 已获得负载均衡地址"
 		}
-		return StateObserved, "?????", "", "", "", "Ingress ???????????????????"
+		return StateObserved, "配置已采集", "", "", "", "Ingress 已采集；部分控制器不会写入标准地址状态"
 	case "NetworkPolicy":
-		return StateObserved, "?????", "", "", "", "NetworkPolicy ????????? CNI ??????????????"
+		return StateObserved, "策略已采集", "", "", "", "NetworkPolicy 是声明式策略；缺少 CNI 流量证据时不能判定实际连通性"
 	case "StorageClass":
-		return StateObserved, "?????", "", "", "", "StorageClass ????????? Condition"
+		return StateObserved, "配置已采集", "", "", "", "StorageClass 没有通用运行时健康 Condition"
 	case "HorizontalPodAutoscaler":
 		current, desired := intValue(status["currentReplicas"]), intValue(status["desiredReplicas"])
 		ready = fmt.Sprintf("%d/%d", current, desired)
 		if conditionState, conditionText, ok := summarizeConditions(status); ok {
-			return conditionState, conditionText, ready, "", "", "?? HPA ??? Condition ??"
+			return conditionState, conditionText, ready, "", "", "基于 HPA 结构化 Condition 汇总"
 		}
-		return StateObserved, "?????", ready, "", "", "HPA ????????????? Condition"
+		return StateObserved, "状态已采集", ready, "", "", "HPA 状态已采集，但缺少可判定的 Condition"
 	case "PodDisruptionBudget":
 		current, desired := intValue(status["currentHealthy"]), intValue(status["desiredHealthy"])
 		ready = fmt.Sprintf("%d/%d", current, desired)
 		if current >= desired {
-			return StateHealthy, "????", ready, "", "", "???? Pod ????????"
+			return StateHealthy, "预算满足", ready, "", "", "当前健康 Pod 数量满足中断预算"
 		}
-		return StateWarning, "????", ready, "", "", "???? Pod ??????????"
+		return StateWarning, "预算不足", ready, "", "", "当前健康 Pod 数量低于中断预算要求"
 	case "Event":
 		raw := rawMap(resource.Raw)
 		eventType, reason := stringValue(raw["type"]), stringValue(raw["reason"])
 		if eventType == "Warning" {
-			return StateWarning, valueOr(reason, "??"), "", "", "", stringValue(raw["message"])
+			return StateWarning, valueOr(reason, "警告"), "", "", "", stringValue(raw["message"])
 		}
-		return StateHealthy, valueOr(reason, "??"), "", "", "", stringValue(raw["message"])
+		return StateHealthy, valueOr(reason, "正常"), "", "", "", stringValue(raw["message"])
 	default:
 		if conditionState, conditionText, ok := summarizeConditions(status); ok {
-			return conditionState, conditionText, "", "", "", "????? Condition ??"
+			return conditionState, conditionText, "", "", "", "基于结构化 Condition 汇总"
 		}
-		return StateObserved, "???", "", "", "", "?????????????????????????????"
+		return StateObserved, "已采集", "", "", "", "资源已成功采集，但此类型没有通用健康判定；详细字段仍可查看"
 	}
 }
 
@@ -807,10 +807,10 @@ func summarizeConditions(status map[string]any) (string, string, bool) {
 	}
 	for _, condition := range conditions {
 		if stringValue(condition["status"]) == "False" {
-			return StateWarning, valueOr(stringValue(condition["reason"]), "Condition ???"), true
+			return StateWarning, valueOr(stringValue(condition["reason"]), "Condition 未满足"), true
 		}
 	}
-	return StateHealthy, "????", true
+	return StateHealthy, "条件正常", true
 }
 
 func rawMap(raw json.RawMessage) map[string]any {

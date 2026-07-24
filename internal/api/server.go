@@ -40,7 +40,7 @@ type Server struct {
 }
 
 func New(repository repository.Repository, logger *slog.Logger) *Server {
-	return NewWithInventory(repository, logger, inventory.Disconnected("Kubernetes ??????"))
+	return NewWithInventory(repository, logger, inventory.Disconnected("Kubernetes 数据源未配置"))
 }
 
 func NewWithInventory(repository repository.Repository, logger *slog.Logger, resourceInventory inventory.Reader) *Server {
@@ -48,7 +48,7 @@ func NewWithInventory(repository repository.Repository, logger *slog.Logger, res
 		logger = slog.Default()
 	}
 	if resourceInventory == nil {
-		resourceInventory = inventory.Disconnected("Kubernetes ??????")
+		resourceInventory = inventory.Disconnected("Kubernetes 数据源未配置")
 	}
 	return &Server{
 		repository: repository, engine: diagnosis.New(rules.Catalog()),
@@ -146,7 +146,7 @@ func (s *Server) clusterOverview(w http.ResponseWriter, _ *http.Request) {
 		"coverage": map[string]any{
 			"source":  "Kubernetes API Informer/List-Watch",
 			"secrets": false,
-			"message": "????????? Kubernetes ?????????????????????? observed?????????",
+			"message": "展示受支持的非敏感 Kubernetes 资源。已采集但没有通用健康条件的资源会标记为 observed，不会显示为健康。",
 		},
 		"access": s.inventory.Access(),
 	})
@@ -350,7 +350,7 @@ func (s *Server) createDiagnosis(w http.ResponseWriter, r *http.Request) {
 		}()
 		observation, observationErr := s.observations.Build(request.Target)
 		if observationErr != nil {
-			task.Status, task.Error = model.StatusFailed, "????? Kubernetes ????????"
+			task.Status, task.Error = model.StatusFailed, "无法从实时 Kubernetes 缓存读取目标资源"
 			s.hub.publish(task.ID, diagnosis.Event{Type: "diagnosis_failed", Data: task.Error})
 			persistCtx, persistCancel := context.WithTimeout(baseCtx, 5*time.Second)
 			defer persistCancel()
@@ -419,7 +419,7 @@ func (s *Server) createNetworkDiagnosis(w http.ResponseWriter, r *http.Request) 
 		s.hub.publish(task.ID, diagnosis.Event{Type: "task_started", Data: task})
 		snapshot, snapshotErr := s.observations.BuildNetwork(request.Request)
 		if snapshotErr != nil {
-			task.Status, task.Error = model.StatusFailed, "????? Kubernetes ????????"
+			task.Status, task.Error = model.StatusFailed, "无法从实时 Kubernetes 缓存构建网络快照"
 			s.hub.publish(task.ID, diagnosis.Event{Type: "diagnosis_failed", Data: task.Error})
 			return
 		}

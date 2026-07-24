@@ -4,6 +4,14 @@ All notable changes are documented here. The format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-25
+
+### Fixed
+
+- Preserve UTF-8 source text in the published GitHub tree and release artifacts.
+- Keep the permission visibility, explicit resource states, and bilingual console
+  from v0.4.0 unchanged.
+
 ## [0.4.0] - 2026-07-25
 
 ### Added

@@ -51,7 +51,7 @@ func TestStoreDistinguishesObservedFromHealthy(t *testing.T) {
 	configMap := resource("cm-1", "ConfigMap", "default", "settings", map[string]any{}, nil)
 	store.Apply(collector.Change{Type: collector.Added, Resource: configMap})
 	result := store.List(Query{State: StateObserved, Limit: 10})
-	if result.Total != 1 || result.Items[0].StateText != "???" {
+	if result.Total != 1 || result.Items[0].StateText != "已采集" {
 		t.Fatalf("observed resource was not represented honestly: %#v", result)
 	}
 }

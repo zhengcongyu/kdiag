@@ -6,12 +6,12 @@ into Incidents and keeps the reasoning chain visible: what happened, impact,
 likely cause, supporting and contradicting evidence, missing evidence,
 remediation, and post-fix verification.
 
-> Current release line: v0.4.0. Go and Web verification results are recorded in
+> Current release line: v0.4.1. Go and Web verification results are recorded in
 > the release notes. Environment-dependent Compose, PostgreSQL, and kind results
 > are reported separately and are never inferred from source alone.
 
-[????](README.zh-CN.md) ? [Roadmap](docs/ROADMAP.md) ?
-[Architecture](docs/architecture/overview.md) ? [Security](SECURITY.md)
+[中文说明](README.zh-CN.md) · [Roadmap](docs/ROADMAP.md) ·
+[Architecture](docs/architecture/overview.md) · [Security](SECURITY.md)
 
 ## Why KDiag
 
@@ -58,8 +58,8 @@ flowchart LR
 - Event message normalization (IP, port, timestamp, generated Pod suffix),
   stable fingerprints, occurrence aggregation, and same-source Evidence
   deduplication.
-- Replaceable Incident aggregator with a tested readiness-failure ? Pod
-  NotReady ? Service unavailable example.
+- Replaceable Incident aggregator with a tested readiness-failure → Pod
+  NotReady → Service unavailable example.
 - Thirteen versioned deterministic rules. Every rule has positive, negative,
   and insufficient-evidence tests. Exit code 137 alone never proves OOM.
 - Asynchronous REST API and named SSE lifecycle events; PostgreSQL repository
@@ -138,9 +138,9 @@ All Kubernetes object and Incident identifiers used to start a workflow are
 selected from live API results and refreshed every 15 seconds; they are not
 free-form resource-name inputs.
 
-Raw technical detail is secondary to user-facing language such as ?Service
-currently has no healthy backend Pods.? Missing data is never rendered as ?no
-problem found.?
+Raw technical detail is secondary to user-facing language such as “Service
+currently has no healthy backend Pods.” Missing data is never rendered as “no
+problem found.”
 
 When running inside Kubernetes, the API automatically uses its ServiceAccount.
 When run locally, it falls back to the standard kubeconfig loading rules; set
@@ -206,7 +206,7 @@ NetworkPolicy. See [the security policy](SECURITY.md).
 
 - The live inventory covers 20 common built-in kinds; arbitrary CRD instances
   are not discovered automatically yet.
-- An ?unknown? resource is visible but does not yet have a health classifier;
+- An “unknown” resource is visible but does not yet have a health classifier;
   unknown never means healthy.
 - The API constructs trusted network snapshots from live informer inventory;
   browser and CLI clients submit only the selected path.
@@ -231,4 +231,4 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and the
 [Code of Conduct](CODE_OF_CONDUCT.md). Security issues must use private
 vulnerability reporting.
 
-Apache License 2.0 ? see [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE).

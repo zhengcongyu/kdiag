@@ -33,14 +33,14 @@ export function PolicyPage() {
   if (policies.isLoading) return <LoadingState />;
   if (policies.error) return <ErrorState error={policies.error} />;
   const items = policies.data ?? [];
-  return <Page title="?????" subtitle="???????? NetworkPolicy ? PodDisruptionBudget????????????">
-    <Alert severity="info" icon={<SecurityOutlined />}>?????????????????????????????</Alert>
+  return <Page title="策略与告警" subtitle="只读展示集群中的 NetworkPolicy 与 PodDisruptionBudget；不会自动修改生产资源。">
+    <Alert severity="info" icon={<SecurityOutlined />}>告警来自结构化资源状态；未知或未覆盖的数据不会显示为正常。</Alert>
     <Stack direction="row" gap={1} flexWrap="wrap">
       <Chip label={`NetworkPolicy ${items.filter((item) => item.ref.kind === "NetworkPolicy").length}`} />
       <Chip label={`PodDisruptionBudget ${items.filter((item) => item.ref.kind === "PodDisruptionBudget").length}`} />
-      <Chip color="warning" label={`??? ${items.filter((item) => item.state !== "healthy").length}`} />
+      <Chip color="warning" label={`需关注 ${items.filter((item) => item.state !== "healthy").length}`} />
     </Stack>
-    {items.length === 0 ? <EmptyState title="????????" detail="Informer ???????????? NetworkPolicy ? PodDisruptionBudget?" /> :
+    {items.length === 0 ? <EmptyState title="没有发现策略资源" detail="Informer 已同步，但当前集群未创建 NetworkPolicy 或 PodDisruptionBudget。" /> :
       <Stack spacing={1.25}>{items.map((item) => <ResourceSummary key={item.ref.uid} item={item} />)}</Stack>}
   </Page>;
 }
@@ -58,11 +58,11 @@ export function ReportsPage() {
       ? JSON.stringify({exportedAt: new Date().toISOString(), incidents: items, diagnoses: tasks}, null, 2)
       : tasks.map((task) => [
         `# ${task.report?.headline ?? `${task.target.kind}/${task.target.name}`}`,
-        "", task.report?.summary ?? "????????",
-        "", `- ???${task.report?.verdict ?? task.status}`,
-        `- ???${task.report?.impact ?? "????"}`,
-        `- ???${task.report?.rootCause ?? "????"}`,
-        "", "## ????", ...(task.report?.remediation ?? []).map((value) => `- ${value}`)
+        "", task.report?.summary ?? "诊断尚未生成报告",
+        "", `- 结论：${task.report?.verdict ?? task.status}`,
+        `- 影响：${task.report?.impact ?? "尚未确认"}`,
+        `- 根因：${task.report?.rootCause ?? "尚未确认"}`,
+        "", "## 修复建议", ...(task.report?.remediation ?? []).map((value) => `- ${value}`)
       ].join("\n")).join("\n\n---\n\n");
     const blob = new Blob([content],
       {type: "application/json"});
@@ -73,19 +73,19 @@ export function ReportsPage() {
     link.click();
     URL.revokeObjectURL(url);
   }
-  return <Page title="??????" subtitle="?????????????????????????????????">
+  return <Page title="诊断报告中心" subtitle="普通用户先看结论，技术人员可进入报告查看完整证据、规则和原始数据。">
     <Stack direction="row" justifyContent="space-between" alignItems="center">
       <Stack direction="row" gap={1}>
-        <Chip label={`???? ${tasks.length}`} />
+        <Chip label={`诊断报告 ${tasks.length}`} />
         <Chip label={`Incident ${items.length}`} />
-        <Chip color="error" label={`??? ${items.filter((item) => item.status !== "resolved").length}`} />
+        <Chip color="error" label={`未解决 ${items.filter((item) => item.status !== "resolved").length}`} />
       </Stack>
       <Stack direction="row" gap={1}>
-        <Button variant="outlined" startIcon={<DownloadOutlined />} onClick={() => exportReports("markdown")} disabled={!tasks.length}>?? Markdown</Button>
-        <Button variant="outlined" onClick={() => exportReports("json")} disabled={!tasks.length && !items.length}>?? JSON</Button>
+        <Button variant="outlined" startIcon={<DownloadOutlined />} onClick={() => exportReports("markdown")} disabled={!tasks.length}>导出 Markdown</Button>
+        <Button variant="outlined" onClick={() => exportReports("json")} disabled={!tasks.length && !items.length}>导出 JSON</Button>
       </Stack>
     </Stack>
-    {tasks.length === 0 ? <EmptyState title="???????" detail="????????????????????????" /> :
+    {tasks.length === 0 ? <EmptyState title="还没有诊断报告" detail="运行资源诊断或网络路径诊断后，报告会保存在这里。" /> :
       <Stack spacing={1.25}>{tasks.map((task) => <Card variant="outlined" key={task.id}><CardContent>
         <Stack direction={{xs: "column", md: "row"}} justifyContent="space-between" gap={2}>
           <Box>
@@ -94,13 +94,13 @@ export function ReportsPage() {
               <Chip size="small" label={task.report?.verdict ?? task.status}
                 color={task.report?.verdict === "CONFIRMED_ISSUE" ? "error" : "default"} />
             </Stack>
-            <Typography color="text.secondary">{task.report?.summary ?? "??????"}</Typography>
+            <Typography color="text.secondary">{task.report?.summary ?? "报告正在生成"}</Typography>
           </Box>
           <Stack direction="row" gap={1} alignItems="center">
-            <Chip size="small" label={`?? ${task.report?.confirmedIssues.length ?? 0}`} />
-            <Chip size="small" label={`??? ${task.report?.unknownChecks.length ?? 0}`} />
+            <Chip size="small" label={`问题 ${task.report?.confirmedIssues.length ?? 0}`} />
+            <Chip size="small" label={`未验证 ${task.report?.unknownChecks.length ?? 0}`} />
             <Button component={Link} to={`/${task.kind === "network" ? "network" : "diagnose"}/${encodeURIComponent(task.id)}`}
-              size="small" variant="outlined">????</Button>
+              size="small" variant="outlined">查看报告</Button>
           </Stack>
         </Stack>
       </CardContent></Card>)}</Stack>}
@@ -127,29 +127,29 @@ export function TopologyPage() {
     queryFn: () => api.topology(resource!.ref.uid, depth, direction),
     enabled: Boolean(resource), refetchInterval: 15_000
   });
-  return <Page title="??????" subtitle="??????????????????????????">
+  return <Page title="智能资源拓扑" subtitle="以所选资源为中心展示上下游、健康状态和故障传播路径。">
     <Card><CardContent><Stack spacing={2}>
       <NamespacePicker value={namespace} onChange={(value) => {setNamespace(value); setResource(undefined);}} />
-      <TextField select label="????" value={kind}
+      <TextField select label="资源类型" value={kind}
         onChange={(event) => {setKind(event.target.value); setResource(undefined);}}>
         {(kinds.length ? kinds : ["Service", "Deployment", "Pod"]).map((value) =>
           <MenuItem key={value} value={value}>{value}</MenuItem>)}
       </TextField>
-      <ResourcePicker kind={kind} namespace={namespace} label="??????"
+      <ResourcePicker kind={kind} namespace={namespace} label="拓扑中心资源"
         value={resource?.ref.uid ?? ""} onChange={setResource} />
       <Stack direction={{xs: "column", md: "row"}} gap={1.5}>
-        <TextField select label="????" value={depth} sx={{minWidth: 160}}
+        <TextField select label="展开层数" value={depth} sx={{minWidth: 160}}
           onChange={(event) => setDepth(Number(event.target.value))}>
-          {[1, 2, 3, 4].map((value) => <MenuItem key={value} value={value}>{value} ?</MenuItem>)}
+          {[1, 2, 3, 4].map((value) => <MenuItem key={value} value={value}>{value} 层</MenuItem>)}
         </TextField>
-        <TextField select label="????" value={direction} sx={{minWidth: 180}}
+        <TextField select label="关系方向" value={direction} sx={{minWidth: 180}}
           onChange={(event) => setDirection(event.target.value)}>
-          <MenuItem value="both">???</MenuItem><MenuItem value="upstream">????</MenuItem>
-          <MenuItem value="downstream">????</MenuItem>
+          <MenuItem value="both">上下游</MenuItem><MenuItem value="upstream">只看上游</MenuItem>
+          <MenuItem value="downstream">只看下游</MenuItem>
         </TextField>
       </Stack>
     </Stack></CardContent></Card>
-    {!resource ? <EmptyState title="???????" detail="?????????????????????" /> : null}
+    {!resource ? <EmptyState title="请选择一个资源" detail="资源名称全部来自当前集群，不支持手工输入。" /> : null}
     {topology.isLoading ? <LoadingState /> : null}
     {topology.error ? <ErrorState error={topology.error} /> : null}
     {topology.data ? <SmartTopology topology={topology.data} /> : null}
@@ -173,7 +173,7 @@ export function SettingsPage() {
         <SettingsOutlined color="primary" />
         <Box sx={{flex: 1}}>
           <Typography variant="h6">{data.connection.name}</Typography>
-          <Typography color="text.secondary">{data.connection.serverVersion} ? {data.connection.mode}</Typography>
+          <Typography color="text.secondary">{data.connection.serverVersion} · {data.connection.mode}</Typography>
         </Box>
         <Chip color={data.connection.status === "connected" ? "success" : "warning"} label={data.connection.status} />
       </Stack>
@@ -252,7 +252,7 @@ export function SettingsPage() {
       </Box> : null}
       {rbac.error ? <Alert severity="error" sx={{mt: 2}}>{String(rbac.error)}</Alert> : null}
     </CardContent></Card>
-    <Alert severity="warning">?? NodePort ??????????????????? HTTPS ?????????????????? NetworkPolicy?</Alert>
+    <Alert severity="warning">当前 NodePort 实验部署未内置身份认证。生产环境应使用 HTTPS 与身份认证代理，并恢复适配入口方式的 NetworkPolicy。</Alert>
   </Page>;
 }
 
@@ -269,7 +269,7 @@ function ResourceSummary({item}: {item: InventoryResource}) {
       <PolicyOutlined color="action" />
       <Box sx={{flex: 1}}>
         <Typography sx={{fontWeight: 650}}>{item.ref.kind}/{item.ref.name}</Typography>
-        <Typography variant="body2" color="text.secondary">{item.ref.namespace || "???"} ? {item.summary}</Typography>
+        <Typography variant="body2" color="text.secondary">{item.ref.namespace || "集群级"} · {item.summary}</Typography>
       </Box>
       <Chip size="small" label={item.stateText} color={item.state === "healthy" ? "success" : item.state === "critical" ? "error" : "warning"} />
     </Stack>
