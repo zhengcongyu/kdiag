@@ -2,6 +2,11 @@
 
 Status legend: ✅ verified, 🟡 implemented but environment-limited verification, ⬜ planned.
 
+## v0.3.3 — Security compatibility patch
+
+- ✅ Keep the actionable troubleshooting UI compatible with React Router v6.
+- ✅ Restore a clean high-severity frontend dependency audit.
+
 ## v0.3.2 — Actionable troubleshooting guidance
 
 - ✅ Explain the exact failing layer and common causes.

@@ -4,6 +4,15 @@ All notable changes are documented here. The format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-07-25
+
+### Security
+
+- Pin React Router DOM to the maintained v6 release line after a newly
+  published high-severity advisory affected the available v7 release line.
+- Keep `pnpm audit --audit-level high` green without suppressing advisories or
+  lowering the workflow threshold.
+
 ## [0.3.2] - 2026-07-25
 
 ### Added
