@@ -26,10 +26,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({target, observation})
     }),
-  networkDiagnose: (target: ResourceRef, observation: Record<string, unknown>) =>
+  networkDiagnose: (requestBody: Record<string, unknown>) =>
     request<DiagnosisTask>("/api/v1/network-diagnoses", {
       method: "POST",
-      body: JSON.stringify({target, observation})
+      body: JSON.stringify(requestBody)
     }),
   replay: (id: string) =>
     request<DiagnosisTask>(`/api/v1/replays/${encodeURIComponent(id)}`, {method: "POST"}),
@@ -56,4 +56,3 @@ export function subscribeDiagnosis(
   });
   return () => source.close();
 }
-

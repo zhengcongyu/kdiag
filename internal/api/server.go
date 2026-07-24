@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/zhengcongyu/kdiag/internal/diagnosis"
+	networkdiag "github.com/zhengcongyu/kdiag/internal/network"
 	"github.com/zhengcongyu/kdiag/internal/repository"
 	"github.com/zhengcongyu/kdiag/internal/rules"
 	"github.com/zhengcongyu/kdiag/pkg/model"
@@ -23,6 +24,7 @@ import (
 type Server struct {
 	repository repository.Repository
 	engine     *diagnosis.Engine
+	network    *networkdiag.Analyzer
 	hub        *eventHub
 	logger     *slog.Logger
 	mu         sync.Mutex
@@ -35,7 +37,8 @@ func New(repository repository.Repository, logger *slog.Logger) *Server {
 	}
 	return &Server{
 		repository: repository, engine: diagnosis.New(rules.Catalog()),
-		hub: newEventHub(), logger: logger, cancels: map[string]context.CancelFunc{},
+		network: networkdiag.NewAnalyzer(nil),
+		hub:     newEventHub(), logger: logger, cancels: map[string]context.CancelFunc{},
 	}
 }
 
@@ -52,7 +55,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/diagnoses/{id}", s.getDiagnosis)
 	mux.HandleFunc("GET /api/v1/diagnoses/{id}/events", s.diagnosisEvents)
 	mux.HandleFunc("DELETE /api/v1/diagnoses/{id}", s.cancelDiagnosis)
-	mux.HandleFunc("POST /api/v1/network-diagnoses", s.createDiagnosis)
+	mux.HandleFunc("POST /api/v1/network-diagnoses", s.createNetworkDiagnosis)
 	mux.HandleFunc("GET /api/v1/resources/search", s.searchResources)
 	mux.HandleFunc("GET /api/v1/resources/{kind}/{namespace}/{name}", s.resource)
 	mux.HandleFunc("POST /api/v1/replays/{incidentId}", s.replay)
@@ -149,9 +152,6 @@ func (s *Server) createDiagnosis(w http.ResponseWriter, r *http.Request) {
 		ID: newID(), Kind: "resource", Target: request.Target,
 		Status: model.StatusPending, CreatedAt: time.Now().UTC(),
 	}
-	if strings.Contains(r.URL.Path, "network-diagnoses") {
-		task.Kind = "network"
-	}
 	if err := s.repository.SaveTask(r.Context(), task); err != nil {
 		writeError(w, r, http.StatusInternalServerError, "INTERNAL", "unable to create diagnosis")
 		return
@@ -173,6 +173,89 @@ func (s *Server) createDiagnosis(w http.ResponseWriter, r *http.Request) {
 			s.hub.publish(task.ID, diagnosis.Event{Type: "diagnosis_failed", Data: task.Error})
 		}
 		_ = s.repository.SaveTask(context.Background(), task)
+	}()
+	writeJSON(w, http.StatusAccepted, task)
+}
+
+type networkDiagnosisRequest struct {
+	networkdiag.Request
+	Snapshot networkdiag.Snapshot `json:"snapshot"`
+}
+
+func (s *Server) createNetworkDiagnosis(w http.ResponseWriter, r *http.Request) {
+	var request networkDiagnosisRequest
+	if err := decodeJSON(r, &request); err != nil {
+		writeError(w, r, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+		return
+	}
+	if err := networkdiag.ValidateRequest(request.Request); err != nil {
+		writeError(w, r, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
+		return
+	}
+	task := model.DiagnosisTask{
+		ID: newID(), Kind: "network",
+		Target: model.ResourceRef{Cluster: request.Cluster, Kind: "Service", Namespace: request.Namespace, Name: request.Service, UID: "service:" + request.Namespace + ":" + request.Service},
+		Status: model.StatusPending, CreatedAt: time.Now().UTC(),
+	}
+	if err := s.repository.SaveTask(r.Context(), task); err != nil {
+		writeError(w, r, http.StatusInternalServerError, "INTERNAL", "unable to create network diagnosis")
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	s.mu.Lock()
+	s.cancels[task.ID] = cancel
+	s.mu.Unlock()
+	go func() {
+		defer func() {
+			s.mu.Lock()
+			delete(s.cancels, task.ID)
+			s.mu.Unlock()
+			cancel()
+		}()
+		started := time.Now().UTC()
+		task.Status, task.StartedAt = model.StatusRunning, &started
+		s.hub.publish(task.ID, diagnosis.Event{Type: "task_started", Data: task})
+		result := s.network.Analyze(ctx, request.Request, request.Snapshot)
+		for _, networkStep := range result.Steps {
+			stepStarted := time.Now().UTC()
+			step := model.DiagnosisStep{
+				ID: task.ID + "/" + networkStep.ID, RuleID: "network/" + networkStep.ID,
+				Name: networkStep.Name, Status: model.StatusRunning, StartedAt: &stepStarted,
+			}
+			s.hub.publish(task.ID, diagnosis.Event{Type: "step_started", Data: step})
+			task.Evidence = append(task.Evidence, networkStep.Evidence)
+			s.hub.publish(task.ID, diagnosis.Event{Type: "evidence_added", Data: networkStep.Evidence})
+			finished := time.Now().UTC()
+			step.CompletedAt, step.Summary = &finished, networkStep.Summary
+			if networkStep.Status == networkdiag.Missing {
+				step.Status = model.StatusNeedsMoreEvidence
+			} else {
+				step.Status = model.StatusCompleted
+			}
+			task.Steps = append(task.Steps, step)
+			s.hub.publish(task.ID, diagnosis.Event{Type: "step_completed", Data: step})
+		}
+		hypothesis := model.Hypothesis{
+			ID: task.ID + "/network", RuleID: "KDIAG-NETWORK-PATH", RuleVersion: "1.0.0",
+			Title: result.Summary, Explanation: strings.Join(result.Limitations, " "),
+			Status: result.Status, Confidence: 0.85, Remediation: result.Remediation, Verification: result.Verification,
+		}
+		for _, item := range task.Evidence {
+			switch item.Role {
+			case model.EvidenceSupporting:
+				hypothesis.SupportingEvidence = append(hypothesis.SupportingEvidence, item.ID)
+			case model.EvidenceContradicting:
+				hypothesis.ContradictingEvidence = append(hypothesis.ContradictingEvidence, item.ID)
+			case model.EvidenceMissing:
+				hypothesis.MissingEvidence = append(hypothesis.MissingEvidence, item.ID)
+			}
+		}
+		task.Hypotheses = []model.Hypothesis{hypothesis}
+		s.hub.publish(task.ID, diagnosis.Event{Type: "hypothesis_updated", Data: hypothesis})
+		finished := time.Now().UTC()
+		task.Status, task.FinishedAt = model.StatusCompleted, &finished
+		_ = s.repository.SaveTask(context.Background(), task)
+		s.hub.publish(task.ID, diagnosis.Event{Type: "diagnosis_completed", Data: task})
 	}()
 	writeJSON(w, http.StatusAccepted, task)
 }

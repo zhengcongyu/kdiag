@@ -9,10 +9,13 @@ export function NetworkPage() {
   const [protocol, setProtocol] = useState("TCP");
   const [message, setMessage] = useState("");
   async function run() {
-    const task = await api.networkDiagnose(
-      {cluster: "demo", uid: "", kind: "Service", namespace: "default", name: service},
-      {source, targetPort: Number(port), protocol, activeProbe: false}
-    );
+    const task = await api.networkDiagnose({
+      cluster: "demo", namespace: "default", source, service, port: Number(port),
+      protocol, activeProbe: false, snapshot: {
+        sourcePods: [], service: {exists: false}, backendPods: [], endpointSlices: [],
+        policy: {applicable: false, summary: "尚未从采集缓存加载 NetworkPolicy", limitations: "无 CNI 流量数据"}
+      }
+    });
     setMessage(`网络诊断任务已启动：${task.id}`);
   }
   return <Stack spacing={3}>
@@ -31,4 +34,3 @@ export function NetworkPage() {
     {message && <Alert severity="success">{message}</Alert>}
   </Stack>;
 }
-
