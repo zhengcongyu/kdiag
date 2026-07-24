@@ -6,11 +6,9 @@ into Incidents and keeps the reasoning chain visible: what happened, impact,
 likely cause, supporting and contradicting evidence, missing evidence,
 remediation, and post-fix verification.
 
-> Release status: development snapshot. The source builds and its local unit,
-> API/SSE, frontend, and Helm tests pass. Docker Compose, PostgreSQL integration,
-> and kind E2E have not been executed on the current development machine because
-> it has no Docker runtime. No `v0.1.0` release should be published until those
-> gates pass.
+> Current release line: v0.3.0. Go and Web verification results are recorded in
+> the release notes. Environment-dependent Compose, PostgreSQL, and kind results
+> are reported separately and are never inferred from source alone.
 
 [中文说明](README.zh-CN.md) · [Roadmap](docs/ROADMAP.md) ·
 [Architecture](docs/architecture/overview.md) · [Security](SECURITY.md)
@@ -60,6 +58,9 @@ flowchart LR
   and insufficient-evidence tests. Exit code 137 alone never proves OOM.
 - Asynchronous REST API and named SSE lifecycle events; PostgreSQL repository
   and versioned migration; in-memory repository for local operation.
+- Trusted server-side Observation construction from the live informer cache,
+  with plain-language reports that separate confirmed, suspected, healthy, and
+  unverified checks.
 - React 19 + TypeScript console with overview, Incident list/detail, evidence,
   topology, timeline, resource diagnosis, network diagnosis, and replay views.
 - Network path static analysis for source readiness, Service/selectors,
@@ -117,9 +118,12 @@ The CLI calls the API; it does not contain a second diagnosis engine.
 - Incident list: severity/status/namespace/text filters, sorting, and paging.
 - Incident detail: conclusion and impact first; steps, Evidence, topology,
   timeline, remediation, and verification in separate tabs.
-- Resource diagnosis: starts an API task and renders SSE events.
+- Resource diagnosis: automatically collects live evidence and renders a
+  conclusion, impact, root cause, troubleshooting chain, safe remediation, and
+  post-fix verification before technical details.
 - Network diagnosis: live source/Service/port selection and path-oriented
-  static checks; active probing remains off.
+  static checks with an explicit blocking point and downstream skipped steps;
+  active probing remains off.
 - Replay: selects a saved Incident and creates a task from its snapshot.
 - Policy and alerts, report center, resource topology, and system settings:
   live read-only operational views with honest coverage and empty states.
@@ -198,8 +202,8 @@ NetworkPolicy. See [the security policy](SECURITY.md).
   are not discovered automatically yet.
 - An “unknown” resource is visible but does not yet have a health classifier;
   unknown never means healthy.
-- The Web console constructs network snapshots from live informer inventory;
-  direct API clients must still submit a prepared snapshot.
+- The API constructs trusted network snapshots from live informer inventory;
+  browser and CLI clients submit only the selected path.
 - Static NetworkPolicy reasoning cannot prove CNI dataplane behavior. KDiag
   never claims complete network health without traffic evidence.
 - PostgreSQL integration and Compose/kind execution remain environment-limited
@@ -211,9 +215,9 @@ NetworkPolicy. See [the security policy](SECURITY.md).
 ## Roadmap
 
 The detailed phase status is in [docs/ROADMAP.md](docs/ROADMAP.md). The next
-release should wire live caches into snapshot creation, add authenticated access
-control, finish PostgreSQL retention/replay comparison, execute Compose/kind
-gates in CI, and add CNI-specific evidence adapters.
+release should add authenticated access control, wire the long-running
+Event-to-Incident controller, finish PostgreSQL retention/replay comparison,
+and add CNI-specific evidence adapters.
 
 ## Contributing
 

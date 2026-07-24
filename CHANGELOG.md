@@ -4,6 +4,38 @@ All notable changes are documented here. The format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-24
+
+### Added
+
+- Trusted server-side Observation construction from informer-backed Pod,
+  Service, EndpointSlice, Event, Node, and PVC state.
+- Plain-language diagnosis reports that separate confirmed issues, suspected
+  issues, healthy checks, and unverified checks.
+- Persisted diagnosis history, filterable task API, replayable SSE event IDs,
+  and health-enriched local topology API.
+- Interactive React Flow health topology with fault-chain focus and
+  upstream/downstream depth controls.
+- Refreshable resource and network diagnosis report URLs plus Markdown and
+  JSON report export.
+
+### Changed
+
+- Resource and network diagnosis now show a conclusion, impact, blocking
+  point, troubleshooting chain, safe remediation, and verification before
+  technical Evidence or raw JSON.
+- Network snapshots are built by the API from live inventory instead of being
+  trusted from the browser.
+- Network steps distinguish PASSED, FAILED, UNKNOWN, and SKIPPED; downstream
+  checks after a blocking failure are explicitly marked as not executed.
+- Cluster overview uses real healthy, warning, critical, and unknown counts.
+
+### Security
+
+- Browser-supplied observations and topology snapshots are no longer trusted
+  as diagnosis facts.
+- Active probes remain disabled by default and KDiag remains read-only.
+
 ## [0.2.1] - 2026-07-24
 
 ### Added

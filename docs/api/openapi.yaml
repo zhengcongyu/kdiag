@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: KDiag API
-  version: 0.1.0
+  version: 0.3.0
   description: Explainable Kubernetes diagnosis API. SSE responses use named events.
 servers:
   - url: http://localhost:8080
@@ -78,6 +78,15 @@ paths:
       responses:
         "200": {description: Saved timeline}
   /api/v1/diagnoses:
+    get:
+      operationId: listDiagnoses
+      parameters:
+        - {in: query, name: kind, schema: {type: string}}
+        - {in: query, name: verdict, schema: {type: string, enum: [CONFIRMED_ISSUE, SUSPECTED_ISSUE, NO_ISSUE_FOUND, INCONCLUSIVE]}}
+        - {in: query, name: namespace, schema: {type: string}}
+        - {in: query, name: q, schema: {type: string}}
+      responses:
+        "200": {description: Persisted diagnosis reports}
     post:
       operationId: createDiagnosis
       requestBody:
@@ -115,6 +124,16 @@ paths:
       operationId: createNetworkDiagnosis
       responses:
         "202": {description: Network diagnosis accepted}
+  /api/v1/topology:
+    get:
+      operationId: getLiveTopology
+      parameters:
+        - {in: query, name: uid, required: true, schema: {type: string}}
+        - {in: query, name: depth, schema: {type: integer, minimum: 1, maximum: 5, default: 2}}
+        - {in: query, name: direction, schema: {type: string, enum: [both, upstream, downstream]}}
+      responses:
+        "200": {description: Health-enriched local resource topology}
+        "404": {$ref: "#/components/responses/NotFound"}
   /api/v1/resources/search:
     get:
       operationId: searchResources
@@ -161,7 +180,6 @@ components:
             kind: {type: string}
             namespace: {type: string}
             name: {type: string}
-        observation: {type: object, additionalProperties: true}
     Error:
       type: object
       properties:

@@ -33,16 +33,29 @@ export const api = {
     request<InventoryResource>(`/api/v1/inventory/${encodeURIComponent(uid)}`),
   incidents: () => request<{items: Incident[]; total: number}>("/api/v1/incidents"),
   incident: (id: string) => request<Incident>(`/api/v1/incidents/${encodeURIComponent(id)}`),
-  diagnose: (target: ResourceRef, observation: Record<string, unknown> = {}) =>
+  diagnose: (target: ResourceRef) =>
     request<DiagnosisTask>("/api/v1/diagnoses", {
       method: "POST",
-      body: JSON.stringify({target, observation})
+      body: JSON.stringify({target})
     }),
   networkDiagnose: (requestBody: Record<string, unknown>) =>
     request<DiagnosisTask>("/api/v1/network-diagnoses", {
       method: "POST",
       body: JSON.stringify(requestBody)
     }),
+  diagnosis: (id: string) =>
+    request<DiagnosisTask>(`/api/v1/diagnoses/${encodeURIComponent(id)}`),
+  diagnoses: (filters: Record<string, string | undefined> = {}) => {
+    const query = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) query.set(key, value);
+    });
+    return request<{items: DiagnosisTask[]; total: number}>(`/api/v1/diagnoses?${query.toString()}`);
+  },
+  topology: (uid: string, depth = 2, direction = "both") =>
+    request<import("./types").GraphSnapshot>(
+      `/api/v1/topology?uid=${encodeURIComponent(uid)}&depth=${depth}&direction=${direction}`
+    ),
   replay: (id: string) =>
     request<DiagnosisTask>(`/api/v1/replays/${encodeURIComponent(id)}`, {method: "POST"}),
   search: (query: string) =>

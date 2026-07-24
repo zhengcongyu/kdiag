@@ -39,6 +39,60 @@ export interface Hypothesis {
 export interface GraphSnapshot {
   nodes: ResourceRef[];
   edges: {from: ResourceRef; to: ResourceRef; relation: string}[];
+  nodeStates?: TopologyNodeState[];
+}
+
+export interface TopologyNodeState {
+  resource: ResourceRef;
+  state: ResourceState | "affected" | "suspected";
+  stateText: string;
+  summary?: string;
+  role?: string;
+}
+
+export type CheckOutcome = "PASSED" | "FAILED" | "SUSPECTED" | "UNKNOWN" | "SKIPPED";
+export type DiagnosisVerdict =
+  "CONFIRMED_ISSUE" | "SUSPECTED_ISSUE" | "NO_ISSUE_FOUND" | "INCONCLUSIVE";
+
+export interface DiagnosisStep {
+  id: string;
+  ruleId: string;
+  name: string;
+  status: string;
+  outcome?: CheckOutcome;
+  startedAt?: string;
+  completedAt?: string;
+  summary?: string;
+  technicalDetail?: string;
+}
+
+export interface DiagnosticIssue {
+  code: string;
+  title: string;
+  summary: string;
+  outcome: CheckOutcome;
+  confidence: number;
+  resource?: ResourceRef;
+  evidence: string[];
+}
+
+export interface DiagnosisReport {
+  verdict: DiagnosisVerdict;
+  headline: string;
+  summary: string;
+  impact: string;
+  blockedAt?: string;
+  rootCause?: string;
+  confirmedIssues: DiagnosticIssue[];
+  suspectedIssues: DiagnosticIssue[];
+  healthyChecks: DiagnosisStep[];
+  unknownChecks: DiagnosisStep[];
+  affectedResources: ResourceRef[];
+  coverage: {checked: number; total: number; capabilities: string[]; limitations: string[]};
+  remediation: string[];
+  verification: string[];
+  topology: GraphSnapshot;
+  generatedAt: string;
 }
 
 export interface Incident {
@@ -64,9 +118,14 @@ export interface DiagnosisTask {
   kind: string;
   target: ResourceRef;
   status: string;
-  steps: {id: string; name: string; status: string; summary?: string}[];
+  steps: DiagnosisStep[];
   evidence: Evidence[];
   hypotheses: Hypothesis[];
+  report?: DiagnosisReport;
+  error?: string;
+  createdAt?: string;
+  startedAt?: string;
+  finishedAt?: string;
 }
 
 export type ResourceState = "healthy" | "warning" | "critical" | "unknown";

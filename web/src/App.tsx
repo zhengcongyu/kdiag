@@ -18,7 +18,9 @@ export function App() {
       <Route path="incidents" element={<IncidentsPage />} />
       <Route path="incidents/:id" element={<IncidentDetailPage />} />
       <Route path="diagnose" element={<DiagnosePage />} />
+      <Route path="diagnose/:id" element={<DiagnosePage />} />
       <Route path="network" element={<NetworkPage />} />
+      <Route path="network/:id" element={<NetworkPage />} />
       <Route path="replay" element={<ReplayPage />} />
       <Route path="policies" element={<PolicyPage />} />
       <Route path="reports" element={<ReportsPage />} />

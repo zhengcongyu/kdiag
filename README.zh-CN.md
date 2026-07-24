@@ -4,9 +4,8 @@ KDiag 是一个开源的 Kubernetes 可解释故障诊断、网络排障与变�
 它把重复异常聚合成 Incident，并明确展示：发生了什么、影响范围、候选根因、
 支持/冲突/缺失证据、定位过程、安全修复建议和修复后验证方案。
 
-> 发布状态：开发快照。Go 单元/API/SSE 测试、前端检查与构建、Helm lint
-> 已通过；当前机器没有 Docker，因此 PostgreSQL 集成、Docker Compose 和
-> kind E2E 尚未真实执行。在这些发布门禁通过前，不应创建 v0.1.0 Release。
+> 当前发布线：v0.3.0。Go、前端以及环境相关的 Compose、PostgreSQL、kind
+> 验证结果会分别记录，不会仅凭代码存在便宣称已经通过。
 
 [Roadmap](docs/ROADMAP.md) · [架构](docs/architecture/overview.md) ·
 [安全策略](SECURITY.md)
@@ -26,6 +25,8 @@ KDiag 不是普通 Kubernetes Dashboard。它以可解释 Incident 为中心，E
   当前 kubeconfig；Informer 缓存已接入实时资源 API。
 - 内存拓扑、Event 归一化/指纹/聚合、同源 Evidence 去重、Incident 聚合。
 - 13 条版本化确定性规则和 DAG 引擎；每条规则都有正例、反例和证据不足测试。
+- API 根据 UID 从实时 Informer 缓存自动构造可信 Observation；诊断报告明确区分
+  已确认问题、疑似问题、检查正常和未验证项。
 - PostgreSQL 迁移与 Repository、异步 REST API、完整命名 SSE 事件、结构化日志、
   请求 ID、指标、超时与优雅关闭。
 - React + TypeScript 控制台：可过滤的“集群全景”、资源完整详情/关系/Event/
@@ -35,6 +36,9 @@ KDiag 不是普通 Kubernetes Dashboard。它以可解释 Incident 为中心，E
   不再要求手工输入；策略与告警、报告中心、资源拓扑和系统设置页面已补齐。
 - Service selector、EndpointSlice、Ready Endpoint、数值/命名 targetPort、
   容器端口与 NetworkPolicy 能力边界的网络静态分析。
+- 资源诊断先展示结论、影响、根因、排查链路和修复验证；网络诊断明确标出阻断层，
+  后续无法检查的层显示为“因上游失败未执行”。
+- 基于 React Flow 的真实资源健康拓扑，支持故障链聚焦、上下游方向和展开深度。
 - API 客户端 CLI、Docker Compose、非 root 镜像、Helm Chart、7 个 kind 故障
   场景，以及 CI、安全和 Release 工作流。
 
@@ -129,7 +133,7 @@ Identity-Aware Ingress 和严格 NetworkPolicy。
 
 - 实时清单当前覆盖 20 类常用原生资源，尚未自动发现和观察任意 CRD 实例。
 - “未评估”表示该资源可查看、但当前没有健康判定规则，不代表异常或健康。
-- Web 控制台会从实时 informer 清单构造网络快照；直接调用网络 API 时仍需提交快照。
+- API 会从实时 informer 清单构造可信网络快照；Web 和 CLI 只提交所选路径。
 - 静态 NetworkPolicy 分析不能证明 CNI 数据面实际正常。
 - PostgreSQL 集成、Compose 和 kind E2E 仍是待执行发布门禁。
 - Helm 的独立 Probe Runner 默认关闭，独立运行命令尚未交付。

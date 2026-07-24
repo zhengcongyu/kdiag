@@ -55,7 +55,7 @@ test("diagnosis resource names come from the live inventory selector", async () 
   render(<QueryClientProvider client={client}>
     <MemoryRouter initialEntries={["/diagnose"]}><App /></MemoryRouter>
   </QueryClientProvider>);
-  expect(await screen.findByRole("heading", {name: "资源诊断"})).toBeInTheDocument();
+  expect(await screen.findByRole("heading", {name: "资源智能诊断"})).toBeInTheDocument();
   expect(await screen.findByText(/实时读取，共 1 项/)).toBeInTheDocument();
   expect(await screen.findByLabelText("资源名称")).toBeInTheDocument();
   expect(screen.queryByRole("textbox", {name: "资源名称"})).not.toBeInTheDocument();

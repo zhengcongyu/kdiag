@@ -1,18 +1,20 @@
 import {useEffect, useMemo, useState} from "react";
 import type {ReactNode} from "react";
+import {Link} from "react-router-dom";
 import {
   Alert, Box, Button, Card, CardContent, Chip, Divider, LinearProgress, MenuItem,
   Stack, TextField, Typography
 } from "@mui/material";
 import {useQuery} from "@tanstack/react-query";
 import {
-  AccountTreeOutlined, DownloadOutlined, PolicyOutlined, SecurityOutlined,
+  DownloadOutlined, PolicyOutlined, SecurityOutlined,
   SettingsOutlined
 } from "@mui/icons-material";
 import {api} from "../api";
 import {EmptyState, ErrorState, LoadingState} from "../components/States";
 import {NamespacePicker} from "../components/NamespacePicker";
 import {ResourcePicker} from "../components/ResourcePicker";
+import {SmartTopology} from "../components/SmartTopology";
 import type {InventoryResource} from "../types";
 
 export function PolicyPage() {
@@ -44,43 +46,60 @@ export function PolicyPage() {
 
 export function ReportsPage() {
   const incidents = useQuery({queryKey: ["incidents"], queryFn: api.incidents, refetchInterval: 15_000});
-  if (incidents.isLoading) return <LoadingState />;
+  const diagnoses = useQuery({queryKey: ["diagnoses"], queryFn: () => api.diagnoses(), refetchInterval: 15_000});
+  if (incidents.isLoading || diagnoses.isLoading) return <LoadingState />;
   if (incidents.error) return <ErrorState error={incidents.error} />;
+  if (diagnoses.error) return <ErrorState error={diagnoses.error} />;
   const items = incidents.data?.items ?? [];
-  function exportReports() {
-    const blob = new Blob([JSON.stringify({exportedAt: new Date().toISOString(), incidents: items}, null, 2)],
+  const tasks = diagnoses.data?.items ?? [];
+  function exportReports(format: "json" | "markdown") {
+    const content = format === "json"
+      ? JSON.stringify({exportedAt: new Date().toISOString(), incidents: items, diagnoses: tasks}, null, 2)
+      : tasks.map((task) => [
+        `# ${task.report?.headline ?? `${task.target.kind}/${task.target.name}`}`,
+        "", task.report?.summary ?? "诊断尚未生成报告",
+        "", `- 结论：${task.report?.verdict ?? task.status}`,
+        `- 影响：${task.report?.impact ?? "尚未确认"}`,
+        `- 根因：${task.report?.rootCause ?? "尚未确认"}`,
+        "", "## 修复建议", ...(task.report?.remediation ?? []).map((value) => `- ${value}`)
+      ].join("\n")).join("\n\n---\n\n");
+    const blob = new Blob([content],
       {type: "application/json"});
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `kdiag-incidents-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `kdiag-reports-${new Date().toISOString().slice(0, 10)}.${format === "json" ? "json" : "md"}`;
     link.click();
     URL.revokeObjectURL(url);
   }
-  return <Page title="报告中心" subtitle="汇总已生成的 Incident、证据数量、候选根因和最近更新时间。">
+  return <Page title="诊断报告中心" subtitle="普通用户先看结论，技术人员可进入报告查看完整证据、规则和原始数据。">
     <Stack direction="row" justifyContent="space-between" alignItems="center">
       <Stack direction="row" gap={1}>
-        <Chip label={`报告 ${items.length}`} />
+        <Chip label={`诊断报告 ${tasks.length}`} />
+        <Chip label={`Incident ${items.length}`} />
         <Chip color="error" label={`未解决 ${items.filter((item) => item.status !== "resolved").length}`} />
       </Stack>
-      <Button variant="outlined" startIcon={<DownloadOutlined />} onClick={exportReports} disabled={!items.length}>
-        导出 JSON
-      </Button>
+      <Stack direction="row" gap={1}>
+        <Button variant="outlined" startIcon={<DownloadOutlined />} onClick={() => exportReports("markdown")} disabled={!tasks.length}>导出 Markdown</Button>
+        <Button variant="outlined" onClick={() => exportReports("json")} disabled={!tasks.length && !items.length}>导出 JSON</Button>
+      </Stack>
     </Stack>
-    {items.length === 0 ? <EmptyState title="还没有诊断报告" detail="创建 Incident 或运行资源诊断后，报告会显示在这里。" /> :
-      <Stack spacing={1.25}>{items.map((incident) => <Card variant="outlined" key={incident.id}><CardContent>
+    {tasks.length === 0 ? <EmptyState title="还没有诊断报告" detail="运行资源诊断或网络路径诊断后，报告会保存在这里。" /> :
+      <Stack spacing={1.25}>{tasks.map((task) => <Card variant="outlined" key={task.id}><CardContent>
         <Stack direction={{xs: "column", md: "row"}} justifyContent="space-between" gap={2}>
           <Box>
             <Stack direction="row" gap={1} alignItems="center">
-              <Typography variant="h6">{incident.title}</Typography>
-              <Chip size="small" label={incident.severity} color={incident.severity === "P0" || incident.severity === "P1" ? "error" : "warning"} />
+              <Typography variant="h6">{task.report?.headline ?? `${task.target.kind}/${task.target.name}`}</Typography>
+              <Chip size="small" label={task.report?.verdict ?? task.status}
+                color={task.report?.verdict === "CONFIRMED_ISSUE" ? "error" : "default"} />
             </Stack>
-            <Typography color="text.secondary">{incident.summary}</Typography>
+            <Typography color="text.secondary">{task.report?.summary ?? "报告正在生成"}</Typography>
           </Box>
           <Stack direction="row" gap={1} alignItems="center">
-            <Chip size="small" label={`证据 ${incident.evidence?.length ?? 0}`} />
-            <Chip size="small" label={`根因 ${incident.hypotheses?.length ?? 0}`} />
-            <Typography variant="caption" color="text.secondary">{new Date(incident.updatedAt).toLocaleString()}</Typography>
+            <Chip size="small" label={`问题 ${task.report?.confirmedIssues.length ?? 0}`} />
+            <Chip size="small" label={`未验证 ${task.report?.unknownChecks.length ?? 0}`} />
+            <Button component={Link} to={`/${task.kind === "network" ? "network" : "diagnose"}/${encodeURIComponent(task.id)}`}
+              size="small" variant="outlined">查看报告</Button>
           </Stack>
         </Stack>
       </CardContent></Card>)}</Stack>}
@@ -92,6 +111,8 @@ export function TopologyPage() {
   const [namespace, setNamespace] = useState("");
   const [kind, setKind] = useState("Service");
   const [resource, setResource] = useState<InventoryResource>();
+  const [depth, setDepth] = useState(2);
+  const [direction, setDirection] = useState("both");
   useEffect(() => {
     if (!namespace && overview.data?.facets.namespaces.length) {
       const values = overview.data.facets.namespaces;
@@ -100,14 +121,12 @@ export function TopologyPage() {
   }, [namespace, overview.data]);
   const kinds = useMemo(() => ["Service", "Deployment", "ReplicaSet", "Pod", "EndpointSlice", "PersistentVolumeClaim"]
     .filter((value) => (overview.data?.facets.kinds[value] ?? 0) > 0), [overview.data]);
-  const relations = [
-    ...(resource?.owners ?? []).map((owner) => ({type: "所有者", kind: owner.kind, name: owner.name, uid: owner.uid})),
-    ...(resource?.relations ?? []).map((relation) => ({
-      type: relationLabel(relation.type), kind: relation.resource.kind,
-      name: relation.resource.name, uid: relation.resource.uid
-    }))
-  ];
-  return <Page title="资源拓扑" subtitle="从实时 OwnerReference、Service selector 与 EndpointSlice 关系构建局部拓扑。">
+  const topology = useQuery({
+    queryKey: ["topology", resource?.ref.uid, depth, direction],
+    queryFn: () => api.topology(resource!.ref.uid, depth, direction),
+    enabled: Boolean(resource), refetchInterval: 15_000
+  });
+  return <Page title="智能资源拓扑" subtitle="以所选资源为中心展示上下游、健康状态和故障传播路径。">
     <Card><CardContent><Stack spacing={2}>
       <NamespacePicker value={namespace} onChange={(value) => {setNamespace(value); setResource(undefined);}} />
       <TextField select label="资源类型" value={kind}
@@ -117,23 +136,22 @@ export function TopologyPage() {
       </TextField>
       <ResourcePicker kind={kind} namespace={namespace} label="拓扑中心资源"
         value={resource?.ref.uid ?? ""} onChange={setResource} />
+      <Stack direction={{xs: "column", md: "row"}} gap={1.5}>
+        <TextField select label="展开层数" value={depth} sx={{minWidth: 160}}
+          onChange={(event) => setDepth(Number(event.target.value))}>
+          {[1, 2, 3, 4].map((value) => <MenuItem key={value} value={value}>{value} 层</MenuItem>)}
+        </TextField>
+        <TextField select label="关系方向" value={direction} sx={{minWidth: 180}}
+          onChange={(event) => setDirection(event.target.value)}>
+          <MenuItem value="both">上下游</MenuItem><MenuItem value="upstream">只看上游</MenuItem>
+          <MenuItem value="downstream">只看下游</MenuItem>
+        </TextField>
+      </Stack>
     </Stack></CardContent></Card>
-    {!resource ? <EmptyState title="请选择一个资源" detail="资源名称全部来自当前集群，不支持手工输入。" /> :
-      <Card variant="outlined"><CardContent>
-        <Stack direction="row" alignItems="center" gap={1.2} sx={{mb: 2}}>
-          <AccountTreeOutlined color="primary" />
-          <Typography variant="h6">{resource.ref.kind}/{resource.ref.name}</Typography>
-          <Chip size="small" label={resource.stateText} />
-        </Stack>
-        {relations.length === 0 ? <Alert severity="info">该资源当前没有可确认的直接关系；这不代表它没有外部依赖。</Alert> :
-          <Stack spacing={1}>{relations.map((relation) =>
-            <Stack key={`${relation.type}-${relation.uid}`} direction="row" gap={1.5} alignItems="center"
-              sx={{p: 1.5, borderRadius: 2, bgcolor: "#f5f7fb"}}>
-              <Chip size="small" label={relation.type} color="primary" variant="outlined" />
-              <Typography>{relation.kind}/{relation.name}</Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ml: "auto"}}>{relation.uid}</Typography>
-            </Stack>)}</Stack>}
-      </CardContent></Card>}
+    {!resource ? <EmptyState title="请选择一个资源" detail="资源名称全部来自当前集群，不支持手工输入。" /> : null}
+    {topology.isLoading ? <LoadingState /> : null}
+    {topology.error ? <ErrorState error={topology.error} /> : null}
+    {topology.data ? <SmartTopology topology={topology.data} /> : null}
   </Page>;
 }
 
@@ -201,11 +219,4 @@ function InfoCard({title, lines}: {title: string; lines: string[]}) {
     <Typography variant="h6">{title}</Typography><Divider sx={{my: 1.5}} />
     <Stack spacing={1}>{lines.map((line) => <Typography key={line} variant="body2">{line}</Typography>)}</Stack>
   </CardContent></Card>;
-}
-
-function relationLabel(value: string) {
-  return ({
-    "owned-by": "所有者", "scheduled-on": "调度到", "selects": "选择",
-    "represented-by": "由 EndpointSlice 表示", "represents": "表示 Service"
-  } as Record<string, string>)[value] ?? value;
 }

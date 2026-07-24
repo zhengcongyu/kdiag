@@ -27,6 +27,11 @@ created until these gates pass.
 - Multi-cluster credentials via external secret managers.
 - Live API-backed workflow selectors and policy, report, topology, and settings
   workspaces are delivered in v0.2.1.
+- ✅ v0.3.0 explainable experience — trusted automatic observation building,
+  plain-language reports, per-check outcomes, diagnosis history, server-built
+  network paths, and health-aware interactive topology.
+- ⬜ Runtime Event-to-Incident controller with durable Signal/Finding storage
+  and richer CNI policy semantics.
 - CNI-specific flow evidence adapters.
 - Signed rule bundles and rule authoring SDK.
 - Retention policies and object storage references.

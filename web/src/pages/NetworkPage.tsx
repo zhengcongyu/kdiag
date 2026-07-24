@@ -1,17 +1,27 @@
 import {useEffect, useMemo, useState} from "react";
+import {useNavigate, useParams} from "react-router-dom";
 import {
-  Alert, Button, Card, CardContent, Chip, MenuItem, Stack, Step, StepLabel,
-  Stepper, TextField, Typography
+  Alert, Box, Button, Card, CardContent, Chip, MenuItem, Stack, TextField, Typography
 } from "@mui/material";
+import {ArrowForwardIos} from "@mui/icons-material";
 import {useQuery} from "@tanstack/react-query";
 import {api, subscribeDiagnosis} from "../api";
+import {DiagnosisReportView} from "../components/DiagnosisReportView";
 import {NamespacePicker} from "../components/NamespacePicker";
 import {ResourcePicker} from "../components/ResourcePicker";
-import type {InventoryResource, ResourceRef} from "../types";
+import type {DiagnosisStep, DiagnosisTask, Evidence, Hypothesis, InventoryResource} from "../types";
+
+const pathLabels = ["源工作负载", "DNS", "Service", "EndpointSlice", "NetworkPolicy", "目标 Pod", "目标端口", "TCP / HTTP"];
 
 export function NetworkPage() {
+  const {id = ""} = useParams();
+  const navigate = useNavigate();
   const overview = useQuery({
     queryKey: ["cluster-overview"], queryFn: api.clusterOverview, refetchInterval: 15_000
+  });
+  const savedTask = useQuery({
+    queryKey: ["diagnosis", id], queryFn: () => api.diagnosis(id), enabled: Boolean(id),
+    refetchInterval: (query) => query.state.data?.report || query.state.data?.status === "FAILED" ? false : 1_000
   });
   const [namespace, setNamespace] = useState("");
   const [sourceKind, setSourceKind] = useState("Pod");
@@ -19,16 +29,9 @@ export function NetworkPage() {
   const [service, setService] = useState<InventoryResource>();
   const [port, setPort] = useState("");
   const [protocol, setProtocol] = useState("TCP");
-  const [taskID, setTaskID] = useState("");
-  const [events, setEvents] = useState<{type: string; data: unknown}[]>([]);
+  const [task, setTask] = useState<DiagnosisTask>();
   const [error, setError] = useState("");
-
-  const namespaceInventory = useQuery({
-    queryKey: ["network-snapshot", namespace],
-    queryFn: () => api.inventory({namespace, limit: 500}),
-    enabled: Boolean(namespace),
-    refetchInterval: 15_000
-  });
+  const servicePorts = useMemo(() => readServicePorts(service), [service]);
 
   useEffect(() => {
     if (!namespace && overview.data?.facets.namespaces.length) {
@@ -36,90 +39,61 @@ export function NetworkPage() {
       setNamespace(namespaces.includes("default") ? "default" : namespaces[0]);
     }
   }, [namespace, overview.data]);
-
+  useEffect(() => setPort(servicePorts.length ? String(servicePorts[0].port) : ""), [service?.ref.uid, servicePorts]);
   useEffect(() => {
-    if (!taskID) return;
-    return subscribeDiagnosis(taskID, (type, data) => setEvents((current) => [...current, {type, data}]));
-  }, [taskID]);
-
-  const servicePorts = useMemo(() => readServicePorts(service), [service]);
-
+    if (savedTask.data) setTask(savedTask.data);
+  }, [savedTask.data]);
   useEffect(() => {
-    setPort(servicePorts.length ? String(servicePorts[0].port) : "");
-  }, [service?.ref.uid, servicePorts]);
+    if (!id) return;
+    return subscribeDiagnosis(id, (type, data) => {
+      setTask((current) => reduceNetworkEvent(current, type, data));
+      if (["diagnosis_completed", "diagnosis_failed", "task_cancelled"].includes(type)) {
+        window.setTimeout(() => void savedTask.refetch(), 250);
+      }
+    });
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run() {
     if (!source || !service || !port) return;
     setError("");
-    setEvents([]);
     try {
-      const all = namespaceInventory.data?.items ?? [];
-      const sourcePods = resolveSourcePods(source, all).map(toNetworkPod);
-      const backendPods = all.filter((item) => item.ref.kind === "Pod").map(toNetworkPod);
-      const endpointSlices = all.filter((item) => item.ref.kind === "EndpointSlice").map(toEndpointSlice);
-      const policies = all.filter((item) => item.ref.kind === "NetworkPolicy");
-      const task = await api.networkDiagnose({
+      const created = await api.networkDiagnose({
         cluster: overview.data?.connection.name ?? source.ref.cluster,
-        namespace,
-        source: `${source.ref.kind}/${source.ref.name}`,
-        service: service.ref.name,
-        port: Number(port),
-        protocol,
-        activeProbe: false,
-        snapshot: {
-          sourcePods,
-          service: {
-            ref: service.ref,
-            exists: true,
-            clusterIP: stringValue(service.spec?.clusterIP),
-            selector: recordOfStrings(service.spec?.selector),
-            ports: servicePorts.map((item) => ({
-              name: item.name, port: item.port, targetPort: String(item.targetPort)
-            }))
-          },
-          backendPods,
-          endpointSlices,
-          policy: {
-            applicable: policies.length > 0,
-            staticallyDenied: false,
-            summary: policies.length
-              ? `发现 ${policies.length} 条 NetworkPolicy；静态检查未断言完全可达`
-              : "当前 Namespace 没有 NetworkPolicy",
-            limitations: "没有 CNI 实际流量数据，不能据此宣称网络完全正常"
-          }
-        }
+        namespace, source: `${source.ref.kind}/${source.ref.name}`,
+        service: service.ref.name, port: Number(port), protocol, activeProbe: false
       });
-      setTaskID(task.id);
+      setTask(created);
+      navigate(`/network/${encodeURIComponent(created.id)}`);
     } catch (caught) {
       setError((caught as Error).message);
     }
   }
 
   return <Stack spacing={3} sx={{p: {xs: 2, md: 3.5}}}>
-    <div>
-      <Typography variant="h4">网络路径诊断</Typography>
-      <Typography color="text.secondary">源资源、目标 Service 与端口均从实时集群清单读取。</Typography>
-    </div>
-    <Alert severity="info">主动探测保持关闭。没有 CNI 流量证据时，KDiag 不会宣称网络完全正常。</Alert>
-    <Stepper activeStep={taskID ? 1 : 0}>
-      {["源资源", "DNS", "Service", "EndpointSlice", "NetworkPolicy", "目标 Pod", "目标端口", "HTTP"].map(
-        (label) => <Step key={label}><StepLabel>{label}</StepLabel></Step>)}
-    </Stepper>
+    <div><Typography variant="h4">网络路径诊断</Typography>
+      <Typography color="text.secondary">逐层检查请求从哪里出发、经过什么、最终卡在哪里。</Typography></div>
+    <Alert severity="info">主动探测默认关闭。没有实际流量与 CNI 证据时，静态检查通过也只会显示“实际连通性未验证”。</Alert>
+    <Box sx={{display: "flex", gap: .7, alignItems: "center", overflowX: "auto", pb: .5}} aria-label="网络诊断路径">
+      {pathLabels.map((label, index) => <Box key={label} sx={{display: "flex", alignItems: "center", gap: .7}}>
+        <Chip size="small" label={label} variant={task?.report?.blockedAt && label.includes(task.report.blockedAt) ? "filled" : "outlined"}
+          color={task?.report?.blockedAt && label.includes(task.report.blockedAt) ? "error" : "default"} />
+        {index < pathLabels.length - 1 ? <ArrowForwardIos sx={{fontSize: 12, color: "text.disabled"}} /> : null}
+      </Box>)}
+    </Box>
     <Card><CardContent><Stack spacing={2}>
+      <Typography variant="h6">选择请求路径</Typography>
       <NamespacePicker value={namespace} onChange={(value) => {
         setNamespace(value); setSource(undefined); setService(undefined); setPort("");
       }} />
       <TextField select fullWidth label="源资源类型" value={sourceKind}
         onChange={(event) => { setSourceKind(event.target.value); setSource(undefined); }}>
-        <MenuItem value="Pod">Pod</MenuItem>
-        <MenuItem value="Deployment">Deployment</MenuItem>
+        <MenuItem value="Pod">Pod</MenuItem><MenuItem value="Deployment">Deployment</MenuItem>
       </TextField>
-      <ResourcePicker kind={sourceKind} namespace={namespace} label="源资源"
+      <ResourcePicker kind={sourceKind} namespace={namespace} label="源工作负载"
         value={source?.ref.uid ?? ""} onChange={setSource} />
       <ResourcePicker kind="Service" namespace={namespace} label="目标 Service"
         value={service?.ref.uid ?? ""} onChange={setService} />
-      <TextField select fullWidth label="目标端口" value={port}
-        disabled={!service || servicePorts.length === 0}
+      <TextField select fullWidth label="目标端口" value={port} disabled={!service || !servicePorts.length}
         helperText={servicePorts.length ? "来自 Service spec.ports" : "该 Service 没有声明端口"}
         onChange={(event) => setPort(event.target.value)}>
         {servicePorts.map((item) => <MenuItem key={`${item.name}-${item.port}`} value={String(item.port)}>
@@ -129,24 +103,11 @@ export function NetworkPage() {
       <TextField select fullWidth label="协议" value={protocol} onChange={(event) => setProtocol(event.target.value)}>
         <MenuItem value="TCP">TCP</MenuItem><MenuItem value="HTTP">HTTP</MenuItem>
       </TextField>
-      {source && service ? <Stack direction="row" gap={1} flexWrap="wrap">
-        <Chip size="small" label={`${source.ref.kind}/${source.ref.name}`} />
-        <Chip size="small" label={`Service/${service.ref.name}`} />
-        <Chip size="small" label={`${namespaceInventory.data?.total ?? 0} 个快照资源`} />
-      </Stack> : null}
-      <Button variant="contained" onClick={run}
-        disabled={!source || !service || !port || namespaceInventory.isLoading}>执行静态诊断</Button>
+      <Button variant="contained" onClick={run} disabled={!source || !service || !port}>开始路径诊断</Button>
     </Stack></CardContent></Card>
-    {namespaceInventory.error ? <Alert severity="error">无法构建网络快照：{(namespaceInventory.error as Error).message}</Alert> : null}
-    {error ? <Alert severity="error">{error}</Alert> : null}
-    {taskID ? <Alert severity="success">网络诊断任务已启动：{taskID}</Alert> : null}
-    <Stack spacing={1}>{events.map((event, index) =>
-      <Card variant="outlined" key={`${event.type}-${index}`}><CardContent>
-        <Typography sx={{fontWeight: 650}}>{event.type}</Typography>
-        <Typography component="pre" sx={{whiteSpace: "pre-wrap", fontSize: 12}}>
-          {JSON.stringify(event.data, null, 2)}
-        </Typography>
-      </CardContent></Card>)}</Stack>
+    {error || savedTask.error ? <Alert severity="error">{error || (savedTask.error as Error).message}</Alert> : null}
+    {task ? <DiagnosisReportView task={task} live={!task.report && task.status !== "FAILED"} /> :
+      <Alert severity="info">选择路径后，KDiag 会明确列出已通过、被阻断和未验证的每一层。</Alert>}
   </Stack>;
 }
 
@@ -160,74 +121,27 @@ function readServicePorts(service?: InventoryResource) {
     return [{name: stringValue(item.name), port, targetPort: item.targetPort ?? port}];
   });
 }
-
-function resolveSourcePods(source: InventoryResource, all: InventoryResource[]) {
-  if (source.ref.kind === "Pod") return [source];
-  const selector = recordOfStrings((source.spec?.selector as Record<string, unknown> | undefined)?.matchLabels);
-  return all.filter((item) => item.ref.kind === "Pod" && labelsMatch(item.labels ?? {}, selector));
-}
-
-function labelsMatch(labels: Record<string, string>, selector: Record<string, string>) {
-  const entries = Object.entries(selector);
-  return entries.length > 0 && entries.every(([key, value]) => labels[key] === value);
-}
-
-function toNetworkPod(item: InventoryResource) {
-  const statuses = Array.isArray(item.status?.conditions) ? item.status.conditions : [];
-  const ready = statuses.some((value) => {
-    const condition = value as Record<string, unknown>;
-    return condition.type === "Ready" && condition.status === "True";
-  });
-  const containers = Array.isArray(item.spec?.containers) ? item.spec.containers : [];
-  const containerPorts: Record<string, number> = {};
-  containers.forEach((value) => {
-    const container = value as Record<string, unknown>;
-    const ports = Array.isArray(container.ports) ? container.ports : [];
-    ports.forEach((portValue) => {
-      const declared = portValue as Record<string, unknown>;
-      const number = Number(declared.containerPort);
-      if (Number.isFinite(number)) containerPorts[stringValue(declared.name) || String(number)] = number;
-    });
-  });
-  return {
-    ref: item.ref,
-    running: item.status?.phase === "Running",
-    ready,
-    labels: item.labels ?? {},
-    ip: item.ip ?? "",
-    containerPorts
-  };
-}
-
-function toEndpointSlice(item: InventoryResource) {
-  const endpoints = Array.isArray(item.spec?.endpoints) ? item.spec.endpoints : [];
-  return {
-    ref: item.ref,
-    service: item.labels?.["kubernetes.io/service-name"] ?? "",
-    endpoints: endpoints.map((value) => {
-      const endpoint = value as Record<string, unknown>;
-      const conditions = (endpoint.conditions ?? {}) as Record<string, unknown>;
-      const target = endpoint.targetRef as Record<string, unknown> | undefined;
-      return {
-        addresses: Array.isArray(endpoint.addresses) ? endpoint.addresses.map(String) : [],
-        ready: typeof conditions.ready === "boolean" ? conditions.ready : undefined,
-        targetRef: target ? {
-          cluster: item.ref.cluster,
-          uid: stringValue(target.uid),
-          kind: stringValue(target.kind),
-          namespace: stringValue(target.namespace) || item.ref.namespace,
-          name: stringValue(target.name)
-        } satisfies ResourceRef : undefined
-      };
-    })
-  };
-}
-
-function recordOfStrings(value: unknown): Record<string, string> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, String(item)]));
-}
-
 function stringValue(value: unknown) {
   return typeof value === "string" ? value : value == null ? "" : String(value);
+}
+function reduceNetworkEvent(current: DiagnosisTask | undefined, type: string, data: unknown): DiagnosisTask | undefined {
+  if (type === "task_started" || type === "diagnosis_completed") return data as DiagnosisTask;
+  if (!current) return current;
+  if (type === "step_started" || type === "step_completed") {
+    const step = data as DiagnosisStep;
+    const exists = current.steps?.some((item) => item.id === step.id);
+    return {...current, status: "RUNNING", steps: exists
+      ? current.steps.map((item) => item.id === step.id ? step : item)
+      : [...(current.steps ?? []), step]};
+  }
+  if (type === "evidence_added") {
+    const item = data as Evidence;
+    return {...current, evidence: [...(current.evidence ?? []).filter((value) => value.id !== item.id), item]};
+  }
+  if (type === "hypothesis_updated") {
+    const item = data as Hypothesis;
+    return {...current, hypotheses: [...(current.hypotheses ?? []).filter((value) => value.id !== item.id), item]};
+  }
+  if (type === "diagnosis_failed") return {...current, status: "FAILED", error: String(data)};
+  return current;
 }
