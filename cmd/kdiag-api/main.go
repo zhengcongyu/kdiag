@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -15,6 +16,15 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--healthcheck" {
+		response, err := (&http.Client{Timeout: 2 * time.Second}).Get("http://127.0.0.1:8080/api/v1/health")
+		if err != nil || response.StatusCode != http.StatusOK {
+			fmt.Fprintln(os.Stderr, "healthcheck failed")
+			os.Exit(1)
+		}
+		_ = response.Body.Close()
+		return
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	var repo repository.Repository
 	var closeRepository func()

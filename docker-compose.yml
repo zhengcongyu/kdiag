@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: kdiag
+      POSTGRES_USER: kdiag
+      POSTGRES_PASSWORD: kdiag-local-only
+    volumes:
+      - kdiag-postgres:/var/lib/postgresql/data
+      - ./migrations/000001_initial.up.sql:/docker-entrypoint-initdb.d/000001_initial.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kdiag -d kdiag"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    security_opt: ["no-new-privileges:true"]
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/docker/api.Dockerfile
+    environment:
+      KDIAG_DATABASE_URL: postgres://kdiag:kdiag-local-only@postgres:5432/kdiag?sslmode=disable
+      KDIAG_LISTEN_ADDRESS: :8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    user: "65532:65532"
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/kdiag-api", "--healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/docker/web.Dockerfile
+    depends_on: [api]
+    environment:
+      KDIAG_API_UPSTREAM: api:8080
+    ports: ["8088:8080"]
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/cache/nginx
+      - /var/run
+    user: "101:101"
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  kdiag-postgres:

@@ -1,0 +1,6 @@
+KDiag Web service:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "kdiag.fullname" . }}-web 8088:{{ .Values.service.webPort }}
+
+Active probes are {{ ternary "enabled" "disabled (recommended default)" .Values.probeRunner.enabled }}.
+Provide PostgreSQL with --set-string api.databaseURL=...; do not commit database credentials.
+

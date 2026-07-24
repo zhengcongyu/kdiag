@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kdiag.fullname" . }}-api
+  labels:
+    {{- include "kdiag.labels" . | nindent 4 }}
+spec:
+  selector: {app.kubernetes.io/name: kdiag, app.kubernetes.io/component: api}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kdiag.fullname" . }}-web
+  labels:
+    {{- include "kdiag.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector: {app.kubernetes.io/name: kdiag, app.kubernetes.io/component: web}
+  ports: [{name: http, port: {{ .Values.service.webPort }}, targetPort: http}]
+

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kdiag.fullname" . }}
+  labels:
+    {{- include "kdiag.labels" . | nindent 4 }}
+data:
+  KDIAG_LISTEN_ADDRESS: ":8080"
+  KDIAG_ACTIVE_PROBES: {{ .Values.probeRunner.enabled | quote }}
+  KDIAG_PROBE_MAX_CONCURRENCY: {{ .Values.probeRunner.maxConcurrency | quote }}
+  KDIAG_PROBE_TIMEOUT: {{ .Values.probeRunner.timeout | quote }}
+

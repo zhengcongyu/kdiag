@@ -12,7 +12,7 @@ Status legend: ✅ verified, 🟡 implemented but environment-limited verificati
 - ✅ Phase 6 — React console
 - ✅ Phase 7 — network path diagnosis
 - 🟡 Phase 8 — kind fault lab and targetPort E2E
-- ⬜ Phase 9 — Docker Compose, Helm, demo
+- 🟡 Phase 9 — Docker Compose, Helm, demo
 - ⬜ Phase 10 — security review, final documentation, release
 
 ## Beyond v0.1

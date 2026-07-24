@@ -1,0 +1,28 @@
+{{- if .Values.probeRunner.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kdiag.fullname" . }}-probe-runner
+  labels:
+    {{- include "kdiag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: probe-runner
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: kdiag, app.kubernetes.io/component: probe-runner}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: kdiag, app.kubernetes.io/component: probe-runner}
+    spec:
+      serviceAccountName: {{ include "kdiag.fullname" . }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: runner
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          args: ["probe-runner"]
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+{{- end }}
+

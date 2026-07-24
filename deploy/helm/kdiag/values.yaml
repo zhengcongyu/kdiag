@@ -1,0 +1,42 @@
+imagePullPolicy: IfNotPresent
+
+api:
+  image:
+    repository: ghcr.io/zhengcongyu/kdiag-api
+    tag: v0.1.0
+  replicas: 1
+  databaseURL: ""
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+
+web:
+  image:
+    repository: ghcr.io/zhengcongyu/kdiag-web
+    tag: v0.1.0
+  replicas: 1
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 250m, memory: 256Mi}
+
+probeRunner:
+  enabled: false
+  maxConcurrency: 4
+  timeout: 5s
+
+service:
+  type: ClusterIP
+  webPort: 80
+
+networkPolicy:
+  enabled: true
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile: {type: RuntimeDefault}
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: ["ALL"]}
+

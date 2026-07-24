@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kdiag.fullname" . }}-api
+  labels:
+    {{- include "kdiag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels: {app.kubernetes.io/name: kdiag, app.kubernetes.io/component: api}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: kdiag, app.kubernetes.io/component: api}
+    spec:
+      serviceAccountName: {{ include "kdiag.fullname" . }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: api
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          envFrom:
+            - configMapRef: {name: {{ include "kdiag.fullname" . }}}
+          {{- if .Values.api.databaseURL }}
+          env:
+            - name: KDIAG_DATABASE_URL
+              value: {{ .Values.api.databaseURL | quote }}
+          {{- end }}
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe: {httpGet: {path: /api/v1/readiness, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /api/v1/health, port: http}, periodSeconds: 10}
+          resources: {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {}}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kdiag.fullname" . }}-web
+  labels:
+    {{- include "kdiag.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  replicas: {{ .Values.web.replicas }}
+  selector:
+    matchLabels: {app.kubernetes.io/name: kdiag, app.kubernetes.io/component: web}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: kdiag, app.kubernetes.io/component: web}
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: web
+          image: "{{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}"
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: KDIAG_API_UPSTREAM
+              value: "{{ include "kdiag.fullname" . }}-api:8080"
+          securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe: {httpGet: {path: /, port: http}, periodSeconds: 5}
+          livenessProbe: {httpGet: {path: /, port: http}, periodSeconds: 10}
+          resources: {{- toYaml .Values.web.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: cache, mountPath: /var/cache/nginx}
+            - {name: run, mountPath: /var/run}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+        - {name: cache, emptyDir: {}}
+        - {name: run, emptyDir: {}}
