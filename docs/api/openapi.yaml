@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: KDiag API
-  version: 0.3.3
+  version: 0.3.4
   description: Explainable Kubernetes diagnosis API. SSE responses use named events.
 servers:
   - url: http://localhost:8080

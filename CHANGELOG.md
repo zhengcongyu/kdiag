@@ -4,6 +4,16 @@ All notable changes are documented here. The format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-07-25
+
+### Fixed
+
+- Encode empty diagnosis collections as JSON arrays instead of `null`.
+- Keep the report UI compatible with historical or memory-backed reports that
+  still contain nullable issue, check, evidence, or capability collections.
+- Prevent the diagnosis report from becoming a blank page while rendering a
+  confirmed issue with no suspected issues.
+
 ## [0.3.3] - 2026-07-25
 
 ### Security

@@ -1,4 +1,4 @@
-import {render, screen} from "@testing-library/react";
+import {cleanup, render, screen} from "@testing-library/react";
 import {expect, test} from "vitest";
 import {DiagnosisReportView} from "./DiagnosisReportView";
 import type {DiagnosisTask} from "../types";
@@ -52,4 +52,10 @@ test("shows a plain-language conclusion before technical evidence", () => {
   expect(screen.getByText(/如果异常/)).toBeInTheDocument();
   expect(screen.getByText("已确认问题")).toBeInTheDocument();
   expect(screen.getByText("未验证")).toBeInTheDocument();
+
+  cleanup();
+  task.report!.suspectedIssues = null as never;
+  task.report!.unknownChecks = null as never;
+  render(<DiagnosisReportView task={task} />);
+  expect(screen.getByRole("heading", {name: "网络路径卡在“目标端口”"})).toBeInTheDocument();
 });

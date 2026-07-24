@@ -13,6 +13,9 @@ func BuildReport(task *model.DiagnosisTask, topology model.GraphSnapshot) *model
 		Verdict: model.VerdictInconclusive, Headline: "证据不足，暂时无法确定问题",
 		Summary: "KDiag 已完成当前可用的结构化检查，但仍缺少作出可靠结论所需的证据。",
 		Impact:  "尚未确认影响范围", AffectedResources: []model.ResourceRef{task.Target},
+		ConfirmedIssues: []model.DiagnosticIssue{}, SuspectedIssues: []model.DiagnosticIssue{},
+		HealthyChecks: []model.DiagnosisStep{}, UnknownChecks: []model.DiagnosisStep{},
+		Remediation: []string{}, Verification: []string{}, Troubleshooting: []model.TroubleshootingAction{},
 		Topology: topology, GeneratedAt: time.Now().UTC(),
 	}
 	for index := range task.Steps {
@@ -86,7 +89,10 @@ func BuildNetworkReport(task *model.DiagnosisTask, result networkdiag.Result, to
 		RootCause: result.RootCause, Coverage: model.CoverageSummary{
 			Capabilities: result.Coverage, Limitations: result.Limitations, Total: len(result.Steps),
 		},
-		Remediation: result.Remediation, Verification: result.Verification,
+		ConfirmedIssues: []model.DiagnosticIssue{}, SuspectedIssues: []model.DiagnosticIssue{},
+		HealthyChecks: []model.DiagnosisStep{}, UnknownChecks: []model.DiagnosisStep{},
+		Troubleshooting: []model.TroubleshootingAction{},
+		Remediation:     result.Remediation, Verification: result.Verification,
 		AffectedResources: []model.ResourceRef{task.Target}, Topology: topology, GeneratedAt: time.Now().UTC(),
 	}
 	blocked := false

@@ -24,11 +24,18 @@ export function DiagnosisReportView({task, live = false}: {task: DiagnosisTask; 
   if (!report) {
     return <LiveProgress task={task} live={live} />;
   }
+  const confirmedIssues = report.confirmedIssues ?? [];
+  const suspectedIssues = report.suspectedIssues ?? [];
+  const healthyChecks = report.healthyChecks ?? [];
+  const unknownChecks = report.unknownChecks ?? [];
+  const remediation = report.remediation ?? [];
+  const verification = report.verification ?? [];
+  const limitations = report.coverage?.limitations ?? [];
   const counts = [
-    {label: "已确认问题", value: report.confirmedIssues.length, color: "#c43228"},
-    {label: "疑似问题", value: report.suspectedIssues.length, color: "#9a5b00"},
-    {label: "检查正常", value: report.healthyChecks.length, color: "#16833d"},
-    {label: "未验证", value: report.unknownChecks.length, color: "#6e6e73"}
+    {label: "已确认问题", value: confirmedIssues.length, color: "#c43228"},
+    {label: "疑似问题", value: suspectedIssues.length, color: "#9a5b00"},
+    {label: "检查正常", value: healthyChecks.length, color: "#16833d"},
+    {label: "未验证", value: unknownChecks.length, color: "#6e6e73"}
   ];
   return <Stack spacing={2.5}>
     <Card sx={{border: "1px solid", borderColor: verdictColor(report), background: verdictBackground(report)}}>
@@ -54,10 +61,10 @@ export function DiagnosisReportView({task, live = false}: {task: DiagnosisTask; 
       </CardContent></Card></Grid>)}
     </Grid>
     <Section title="排查链路" subtitle={`已完成 ${report.coverage.checked}/${report.coverage.total} 项可用检查`}>
-      <TroubleshootingChain steps={task.steps} />
+      <TroubleshootingChain steps={task.steps ?? []} />
     </Section>
-    {report.confirmedIssues.length || report.suspectedIssues.length ? <Section title="诊断结论" subtitle="先看结论，需要时再展开技术证据">
-      <Stack spacing={1}>{[...report.confirmedIssues, ...report.suspectedIssues].map((issue) =>
+    {confirmedIssues.length || suspectedIssues.length ? <Section title="诊断结论" subtitle="先看结论，需要时再展开技术证据">
+      <Stack spacing={1}>{[...confirmedIssues, ...suspectedIssues].map((issue) =>
         <Alert key={issue.code} severity={issue.outcome === "FAILED" ? "error" : "warning"}>
           <Typography sx={{fontWeight: 700}}>{issue.title}</Typography>
           <Typography>{issue.summary}</Typography>
@@ -74,22 +81,22 @@ export function DiagnosisReportView({task, live = false}: {task: DiagnosisTask; 
       <TroubleshootingGuide actions={report.troubleshooting ?? []} />
     </Section>
     <Section title="安全修复建议" subtitle="只提供建议与变更预览，不会自动修改集群">
-      <Stack spacing={1}>{report.remediation.map((item, index) =>
+      <Stack spacing={1}>{remediation.map((item, index) =>
         <Alert key={`${index}-${item}`} severity="info"><strong>{index + 1}.</strong> {item}</Alert>)}</Stack>
       <Typography variant="h6" sx={{mt: 2}}>修复后验证</Typography>
-      <Stack spacing={.7} sx={{mt: 1}}>{report.verification.map((item) =>
+      <Stack spacing={.7} sx={{mt: 1}}>{verification.map((item) =>
         <Typography key={item}>• {item}</Typography>)}</Stack>
     </Section>
     <Accordion>
       <AccordionSummary expandIcon={<ExpandMore />}><Typography sx={{fontWeight: 700}}>能力覆盖与限制</Typography></AccordionSummary>
       <AccordionDetails><Stack spacing={1}>
-        <Typography>已使用：{report.coverage.capabilities.join("、") || "没有可用能力"}</Typography>
-        {report.coverage.limitations.map((item) => <Alert key={item} severity="warning">{item}</Alert>)}
+        <Typography>已使用：{(report.coverage?.capabilities ?? []).join("、") || "没有可用能力"}</Typography>
+        {limitations.map((item) => <Alert key={item} severity="warning">{item}</Alert>)}
       </Stack></AccordionDetails>
     </Accordion>
     <Accordion>
       <AccordionSummary expandIcon={<ExpandMore />}><Typography sx={{fontWeight: 700}}>技术证据与规则详情</Typography></AccordionSummary>
-      <AccordionDetails><EvidenceList evidence={task.evidence} /></AccordionDetails>
+      <AccordionDetails><EvidenceList evidence={task.evidence ?? []} /></AccordionDetails>
     </Accordion>
     {report.topology?.nodes?.length ? <Section title="故障资源拓扑" subtitle="红色为故障，绿色为健康，灰色表示尚未确认">
       <SmartTopology topology={report.topology} height={440} />
