@@ -77,7 +77,7 @@ export function AppShell() {
               {connection?.serverVersion ?? "等待集群版本"}
             </Typography>
           </Box>
-          <Typography variant="caption" color="text.secondary">KDiag v0.3.0</Typography>
+          <Typography variant="caption" color="text.secondary">KDiag v0.3.1</Typography>
         </Box>
       </Box>
       <Box component="main" sx={{ml: "188px", minWidth: 0, width: "calc(100% - 188px)"}}>

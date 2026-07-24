@@ -4,6 +4,17 @@ All notable changes are documented here. The format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-25
+
+### Fixed
+
+- Kept the targetPort fault lab backend healthy under a non-root,
+  capability-free security context.
+- Added an exact Service port to targetPort to declared container port
+  comparison and read-only remediation diff.
+- Used the real Service UID in network reports so live topology and Incident
+  linkage are retained.
+
 ## [0.3.0] - 2026-07-24
 
 ### Added
