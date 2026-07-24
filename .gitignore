@@ -1,0 +1,26 @@
+# Build outputs and local state
+/bin/
+/dist/
+/coverage/
+/work/
+/.tools/
+/web/node_modules/
+/web/dist/
+*.out
+*.test
+
+# Secrets and cluster credentials
+.env
+.env.*
+!.env.example
+*.kubeconfig
+kubeconfig
+*.pem
+*.key
+*.crt
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
