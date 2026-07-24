@@ -47,7 +47,7 @@ deploy:
 	helm upgrade --install kdiag deploy/helm/kdiag --namespace kdiag-system --create-namespace
 
 demo:
-	kubectl apply -f deploy/demo/targetport/
+	kubectl apply -f deploy/kind/scenarios/targetport/fault.yaml
 
 e2e:
 	./deploy/kind/run-e2e.sh targetport

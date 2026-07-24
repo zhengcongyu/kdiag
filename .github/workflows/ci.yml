@@ -51,6 +51,6 @@ jobs:
       - run: helm template test deploy/helm/kdiag >/dev/null
       - run: pip install yamllint==1.37.1
       - run: >-
-          yamllint -d "{extends: relaxed, rules: {line-length: disable}}"
-          .github deploy/kind deploy/demo docker-compose.yml
+          yamllint -d "{extends: relaxed, rules: {line-length: disable, empty-lines: {max-end: 1}}}"
+          .github deploy/kind docker-compose.yml
           deploy/helm/kdiag/Chart.yaml deploy/helm/kdiag/values.yaml

@@ -8,17 +8,26 @@ body:
       value: Do not include kubeconfigs, tokens, Secret contents, or private logs.
   - type: textarea
     id: summary
-    attributes: {label: What happened?, description: Include expected and actual behavior.}
-    validations: {required: true}
+    attributes:
+      label: "What happened?"
+      description: Include expected and actual behavior.
+    validations:
+      required: true
   - type: textarea
     id: reproduce
-    attributes: {label: Reproduction, description: Provide sanitized steps and manifests.}
-    validations: {required: true}
+    attributes:
+      label: Reproduction
+      description: Provide sanitized steps and manifests.
+    validations:
+      required: true
   - type: input
     id: version
-    attributes: {label: KDiag version}
-    validations: {required: true}
+    attributes:
+      label: KDiag version
+    validations:
+      required: true
   - type: textarea
     id: environment
-    attributes: {label: Environment, description: Kubernetes version, CNI, storage, and deployment method.}
-
+    attributes:
+      label: Environment
+      description: Kubernetes version, CNI, storage, and deployment method.
