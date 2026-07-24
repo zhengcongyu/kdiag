@@ -3,7 +3,7 @@ imagePullPolicy: IfNotPresent
 api:
   image:
     repository: ghcr.io/zhengcongyu/kdiag-api
-    tag: v0.1.0
+    tag: v0.1.2
   replicas: 1
   databaseSecret:
     name: ""
@@ -15,7 +15,7 @@ api:
 web:
   image:
     repository: ghcr.io/zhengcongyu/kdiag-web
-    tag: v0.1.0
+    tag: v0.1.2
   replicas: 1
   resources:
     requests: {cpu: 50m, memory: 64Mi}
