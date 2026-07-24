@@ -75,6 +75,7 @@ func BuildReport(task *model.DiagnosisTask, topology model.GraphSnapshot) *model
 	if len(report.Remediation) == 0 {
 		report.Remediation = []string{"先补充“未验证”部分所需的证据，再决定是否修改资源；KDiag 不会自动变更生产集群。"}
 	}
+	enrichTroubleshooting(report, task.Target)
 	return report
 }
 
@@ -138,6 +139,7 @@ func BuildNetworkReport(task *model.DiagnosisTask, result networkdiag.Result, to
 	if len(report.Remediation) == 0 {
 		report.Remediation = []string{"当前没有足够证据建议修改资源；如需确认实际连通性，请在受控环境启用白名单主动探测。"}
 	}
+	enrichTroubleshooting(report, task.Target)
 	return report
 }
 

@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: KDiag API
-  version: 0.3.0
+  version: 0.3.2
   description: Explainable Kubernetes diagnosis API. SSE responses use named events.
 servers:
   - url: http://localhost:8080
@@ -86,7 +86,7 @@ paths:
         - {in: query, name: namespace, schema: {type: string}}
         - {in: query, name: q, schema: {type: string}}
       responses:
-        "200": {description: Persisted diagnosis reports}
+        "200": {description: Persisted diagnosis reports with structured troubleshooting guidance}
     post:
       operationId: createDiagnosis
       requestBody:
@@ -103,7 +103,7 @@ paths:
     get:
       operationId: getDiagnosis
       responses:
-        "200": {description: Diagnosis task}
+        "200": {description: Diagnosis task including problem location, causes, read-only commands, expected results, and next steps}
     delete:
       operationId: cancelDiagnosis
       responses:

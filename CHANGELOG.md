@@ -4,6 +4,26 @@ All notable changes are documented here. The format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-25
+
+### Added
+
+- Add structured troubleshooting guides to every diagnosis report, including
+  problem location, common causes, ordered read-only `kubectl` commands,
+  expected healthy output, and the next action when output is abnormal.
+- Add rule-specific guidance for Pod lifecycle, image, probe, Service selector,
+  EndpointSlice, targetPort, scheduling, PVC, Node, and NetworkPolicy failures.
+- Add actionable error states for API connectivity, RBAC, missing reports, and
+  server failures, including Request ID visibility and platform checks.
+- Add one-click copying for safe read-only diagnostic commands.
+
+### Security
+
+- Generate commands only from trusted resource references and an allow-listed
+  Kubernetes resource-kind mapping.
+- Do not suggest `apply`, `patch`, `edit`, `delete`, `exec`, arbitrary shell
+  commands, or automatic production changes.
+
 ## [0.3.1] - 2026-07-25
 
 ### Fixed

@@ -1,13 +1,13 @@
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Card, CardContent,
-  Chip, Divider, Grid, Stack, Typography
+  Button, Chip, Divider, Grid, Stack, Typography
 } from "@mui/material";
 import {
-  CheckCircleOutline, ErrorOutline, ExpandMore, HelpOutline, RouteOutlined,
+  CheckCircleOutline, ContentCopyOutlined, ErrorOutline, ExpandMore, HelpOutline, RouteOutlined,
   WarningAmberOutlined
 } from "@mui/icons-material";
 import type {
-  CheckOutcome, DiagnosisReport, DiagnosisStep, DiagnosisTask, Evidence
+  CheckOutcome, DiagnosisReport, DiagnosisStep, DiagnosisTask, Evidence, TroubleshootingAction
 } from "../types";
 import {SmartTopology} from "./SmartTopology";
 
@@ -61,8 +61,18 @@ export function DiagnosisReportView({task, live = false}: {task: DiagnosisTask; 
         <Alert key={issue.code} severity={issue.outcome === "FAILED" ? "error" : "warning"}>
           <Typography sx={{fontWeight: 700}}>{issue.title}</Typography>
           <Typography>{issue.summary}</Typography>
+          {issue.problemAt ? <Typography sx={{mt: 1}}>
+            <strong>问题位置：</strong>{issue.problemAt}
+          </Typography> : null}
+          {issue.possibleCauses?.length ? <Box sx={{mt: 1}}>
+            <Typography sx={{fontWeight: 650}}>常见原因</Typography>
+            {issue.possibleCauses.map((cause) => <Typography key={cause}>• {cause}</Typography>)}
+          </Box> : null}
         </Alert>)}</Stack>
     </Section> : null}
+    <Section title="推荐排错方法" subtitle="按顺序执行以下只读检查；每一步都说明正常结果和异常时的下一步。">
+      <TroubleshootingGuide actions={report.troubleshooting ?? []} />
+    </Section>
     <Section title="安全修复建议" subtitle="只提供建议与变更预览，不会自动修改集群">
       <Stack spacing={1}>{report.remediation.map((item, index) =>
         <Alert key={`${index}-${item}`} severity="info"><strong>{index + 1}.</strong> {item}</Alert>)}</Stack>
@@ -90,6 +100,54 @@ export function DiagnosisReportView({task, live = false}: {task: DiagnosisTask; 
         {JSON.stringify(task, null, 2)}
       </Box></AccordionDetails>
     </Accordion>
+  </Stack>;
+}
+
+function TroubleshootingGuide({actions}: {actions: TroubleshootingAction[]}) {
+  if (!actions.length) {
+    return <Alert severity="warning">当前报告还没有可执行的排错步骤。请先补充“未验证”项所需证据，不要直接修改资源。</Alert>;
+  }
+  return <Stack spacing={1.5}>{actions.map((action, index) =>
+    <Card variant="outlined" key={`${action.title}-${action.command ?? index}`} sx={{borderRadius: 2.5}}>
+      <CardContent>
+        <Stack direction={{xs: "column", md: "row"}} justifyContent="space-between" gap={1}>
+          <Box>
+            <Stack direction="row" gap={1} alignItems="center">
+              <Typography variant="h6">{index + 1}. {action.title}</Typography>
+              {action.readOnly ? <Chip size="small" color="success" variant="outlined" label="只读命令" /> : null}
+            </Stack>
+            <Typography color="text.secondary" sx={{mt: .5}}>{action.purpose}</Typography>
+          </Box>
+          {action.command ? <Button
+            size="small"
+            variant="outlined"
+            startIcon={<ContentCopyOutlined />}
+            aria-label={`复制命令：${action.title}`}
+            onClick={() => void navigator.clipboard.writeText(action.command ?? "")}
+          >复制命令</Button> : null}
+        </Stack>
+        {action.command ? <Box component="pre" sx={{
+          mt: 1.5, mb: 0, p: 1.5, borderRadius: 2, overflowX: "auto",
+          bgcolor: "#f5f5f7", border: "1px solid", borderColor: "divider",
+          fontSize: 13, whiteSpace: "pre-wrap", wordBreak: "break-word"
+        }}>{action.command}</Box> : null}
+        <Grid container spacing={1.5} sx={{mt: .5}}>
+          <Grid size={{xs: 12, md: 6}}>
+            <Alert severity="success" variant="outlined">
+              <strong>正常应看到：</strong>{action.expected}
+            </Alert>
+          </Grid>
+          <Grid size={{xs: 12, md: 6}}>
+            <Alert severity="warning" variant="outlined">
+              <strong>如果异常：</strong>{action.ifAbnormal}
+            </Alert>
+          </Grid>
+        </Grid>
+        {action.requiresAccess ? <Typography variant="caption" color="text.secondary" sx={{display: "block", mt: 1}}>
+          权限要求：{action.requiresAccess}
+        </Typography> : null}
+      </CardContent>
+    </Card>)}
   </Stack>;
 }
 

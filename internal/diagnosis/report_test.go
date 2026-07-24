@@ -1,6 +1,7 @@
 package diagnosis
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -44,5 +45,46 @@ func TestReportPromotesStructuredSupportingEvidence(t *testing.T) {
 	if report.Verdict != model.VerdictConfirmed || len(report.ConfirmedIssues) != 1 ||
 		report.RootCause == "" || len(report.Remediation) == 0 {
 		t.Fatalf("supporting evidence was not promoted: %#v", report)
+	}
+	if report.ConfirmedIssues[0].ProblemAt == "" ||
+		len(report.ConfirmedIssues[0].PossibleCauses) == 0 ||
+		len(report.Troubleshooting) < 3 {
+		t.Fatalf("report does not explain where and how to troubleshoot: %#v", report)
+	}
+	foundTargetPort := false
+	for _, action := range report.Troubleshooting {
+		if !action.ReadOnly {
+			t.Fatalf("unsafe troubleshooting action: %#v", action)
+		}
+		for _, forbidden := range []string{"kubectl apply", "kubectl delete", "kubectl patch", "kubectl edit", "kubectl exec"} {
+			if strings.Contains(action.Command, forbidden) {
+				t.Fatalf("troubleshooting command mutates or executes in workload: %s", action.Command)
+			}
+		}
+		if strings.Contains(action.Command, "targetPort") {
+			foundTargetPort = true
+		}
+	}
+	if !foundTargetPort {
+		t.Fatalf("targetPort report is missing an exact port inspection command: %#v", report.Troubleshooting)
+	}
+}
+
+func TestTroubleshootingCommandsAreScopedToTargetNamespace(t *testing.T) {
+	target := model.ResourceRef{
+		UID: "pod-1", Kind: "Pod", Namespace: "production", Name: "payment-abc",
+	}
+	issue := model.DiagnosticIssue{Code: "KDIAG-POD-CRASHLOOP", Resource: &target}
+	enrichIssue(&issue, target)
+	if !strings.Contains(issue.ProblemAt, "容器生命周期") || len(issue.Troubleshooting) < 3 {
+		t.Fatalf("CrashLoop guide is incomplete: %#v", issue)
+	}
+	for _, action := range issue.Troubleshooting {
+		if action.Command != "" && !strings.Contains(action.Command, "-n 'production'") {
+			t.Fatalf("namespaced command is not scoped: %s", action.Command)
+		}
+	}
+	if !strings.Contains(issue.Troubleshooting[len(issue.Troubleshooting)-1].Command, "--previous") {
+		t.Fatalf("CrashLoop guide should include previous container logs: %#v", issue.Troubleshooting)
 	}
 }

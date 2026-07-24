@@ -3,8 +3,14 @@ import type {
 } from "./types";
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+    public code?: string,
+    public requestId?: string
+  ) {
     super(message);
+    this.name = "ApiError";
   }
 }
 
@@ -15,7 +21,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({error: {message: response.statusText}}));
-    throw new ApiError(response.status, body.error?.message ?? "请求失败");
+    throw new ApiError(
+      response.status,
+      body.error?.message ?? "请求失败",
+      body.error?.code,
+      body.error?.requestId
+    );
   }
   return response.json() as Promise<T>;
 }

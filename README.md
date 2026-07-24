@@ -6,7 +6,7 @@ into Incidents and keeps the reasoning chain visible: what happened, impact,
 likely cause, supporting and contradicting evidence, missing evidence,
 remediation, and post-fix verification.
 
-> Current release line: v0.3.1. Go and Web verification results are recorded in
+> Current release line: v0.3.2. Go and Web verification results are recorded in
 > the release notes. Environment-dependent Compose, PostgreSQL, and kind results
 > are reported separately and are never inferred from source alone.
 

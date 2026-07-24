@@ -2,6 +2,14 @@
 
 Status legend: ✅ verified, 🟡 implemented but environment-limited verification, ⬜ planned.
 
+## v0.3.2 — Actionable troubleshooting guidance
+
+- ✅ Explain the exact failing layer and common causes.
+- ✅ Provide ordered, resource-scoped, read-only `kubectl` commands.
+- ✅ Explain expected output and what to investigate when output is abnormal.
+- ✅ Add guided API/RBAC/connectivity error states with Request ID support.
+- ✅ Test that generated commands do not mutate resources or execute in Pods.
+
 ## v0.1.0 Explainable Diagnostics MVP
 
 - ✅ Phase 1 — repository, architecture, project skeleton, CI

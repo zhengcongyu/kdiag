@@ -70,10 +70,23 @@ export interface DiagnosticIssue {
   code: string;
   title: string;
   summary: string;
+  problemAt?: string;
+  possibleCauses?: string[];
   outcome: CheckOutcome;
   confidence: number;
   resource?: ResourceRef;
   evidence: string[];
+  troubleshooting?: TroubleshootingAction[];
+}
+
+export interface TroubleshootingAction {
+  title: string;
+  purpose: string;
+  command?: string;
+  expected: string;
+  ifAbnormal: string;
+  readOnly: boolean;
+  requiresAccess?: string;
 }
 
 export interface DiagnosisReport {
@@ -89,6 +102,7 @@ export interface DiagnosisReport {
   unknownChecks: DiagnosisStep[];
   affectedResources: ResourceRef[];
   coverage: {checked: number; total: number; capabilities: string[]; limitations: string[]};
+  troubleshooting: TroubleshootingAction[];
   remediation: string[];
   verification: string[];
   topology: GraphSnapshot;
