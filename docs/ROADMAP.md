@@ -6,7 +6,7 @@ Status legend: ✅ verified, 🟡 implemented but environment-limited verificati
 
 - ✅ Phase 1 — repository, architecture, project skeleton, CI
 - ✅ Phase 2 — domain model, informer collector abstractions, topology graph
-- ⬜ Phase 3 — Event normalization, evidence deduplication, incident aggregation
+- ✅ Phase 3 — Event normalization, evidence deduplication, incident aggregation
 - ⬜ Phase 4 — deterministic rules and DAG diagnosis engine
 - ⬜ Phase 5 — PostgreSQL migrations, repository, REST API, asynchronous SSE
 - ⬜ Phase 6 — React console
