@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: kdiag-bad-image}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: bad-image, namespace: kdiag-bad-image}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: bad-image}}
+  template:
+    metadata: {labels: {app: bad-image}}
+    spec:
+      containers:
+        - {name: app, image: registry.invalid/kdiag/does-not-exist:v0}
+

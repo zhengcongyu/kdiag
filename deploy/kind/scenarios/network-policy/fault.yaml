@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: kdiag-policy}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: frontend, namespace: kdiag-policy, labels: {app: frontend}}
+spec:
+  containers: [{name: client, image: curlimages/curl:8.12.1, command: ["sleep", "3600"]}]
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: payment, namespace: kdiag-policy, labels: {app: payment}}
+spec:
+  containers: [{name: app, image: nginx:1.27-alpine, ports: [{containerPort: 80}]}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: payment, namespace: kdiag-policy}
+spec:
+  selector: {app: payment}
+  ports: [{port: 80, targetPort: 80}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: deny-frontend, namespace: kdiag-policy}
+spec:
+  podSelector: {matchLabels: {app: payment}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app: trusted}}
+

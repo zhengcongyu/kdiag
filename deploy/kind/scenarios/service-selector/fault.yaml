@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: kdiag-selector}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: payment, namespace: kdiag-selector}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: payment}}
+  template:
+    metadata: {labels: {app: payment}}
+    spec:
+      containers:
+        - {name: app, image: nginx:1.27-alpine, ports: [{name: http, containerPort: 80}]}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: payment, namespace: kdiag-selector}
+spec:
+  selector: {app: payments}
+  ports: [{name: http, port: 80, targetPort: http}]
+

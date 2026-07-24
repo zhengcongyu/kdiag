@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: kdiag-pvc}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: data, namespace: kdiag-pvc}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: unavailable-kdiag-class
+  resources:
+    requests: {storage: 1Gi}
+

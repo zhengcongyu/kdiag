@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: kdiag-missing-config}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: app-config, namespace: kdiag-missing-config}
+data: {present: value}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: missing-config, namespace: kdiag-missing-config}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: missing-config}}
+  template:
+    metadata: {labels: {app: missing-config}}
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.37
+          command: ["sh", "-c", "sleep 3600"]
+          env:
+            - name: REQUIRED_VALUE
+              valueFrom:
+                configMapKeyRef: {name: app-config, key: missing}
+
