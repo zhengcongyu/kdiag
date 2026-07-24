@@ -8,7 +8,7 @@ Status legend: ✅ verified, 🟡 implemented but environment-limited verificati
 - ✅ Phase 2 — domain model, informer collector abstractions, topology graph
 - ✅ Phase 3 — Event normalization, evidence deduplication, incident aggregation
 - ✅ Phase 4 — deterministic rules and DAG diagnosis engine
-- ⬜ Phase 5 — PostgreSQL migrations, repository, REST API, asynchronous SSE
+- 🟡 Phase 5 — PostgreSQL migrations, repository, REST API, asynchronous SSE
 - ⬜ Phase 6 — React console
 - ⬜ Phase 7 — network path diagnosis
 - ⬜ Phase 8 — kind fault lab and targetPort E2E

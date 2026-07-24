@@ -1,0 +1,156 @@
+openapi: 3.0.3
+info:
+  title: KDiag API
+  version: 0.1.0
+  description: Explainable Kubernetes diagnosis API. SSE responses use named events.
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v1/health:
+    get:
+      operationId: health
+      responses:
+        "200": {description: Healthy}
+  /api/v1/readiness:
+    get:
+      operationId: readiness
+      responses:
+        "200": {description: Ready}
+  /api/v1/clusters:
+    get:
+      operationId: listClusters
+      responses:
+        "200": {description: Cluster list}
+  /api/v1/incidents:
+    get:
+      operationId: listIncidents
+      responses:
+        "200": {description: Incident list}
+  /api/v1/incidents/{id}:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    get:
+      operationId: getIncident
+      responses:
+        "200": {description: Incident snapshot}
+        "404": {$ref: "#/components/responses/NotFound"}
+  /api/v1/incidents/{id}/topology:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    get:
+      operationId: getIncidentTopology
+      responses:
+        "200": {description: Saved local topology}
+  /api/v1/incidents/{id}/timeline:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    get:
+      operationId: getIncidentTimeline
+      responses:
+        "200": {description: Saved timeline}
+  /api/v1/diagnoses:
+    post:
+      operationId: createDiagnosis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/DiagnosisRequest"}
+      responses:
+        "202": {description: Diagnosis accepted}
+        "400": {$ref: "#/components/responses/BadRequest"}
+  /api/v1/diagnoses/{id}:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    get:
+      operationId: getDiagnosis
+      responses:
+        "200": {description: Diagnosis task}
+    delete:
+      operationId: cancelDiagnosis
+      responses:
+        "204": {description: Cancellation requested}
+  /api/v1/diagnoses/{id}/events:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    get:
+      operationId: streamDiagnosis
+      responses:
+        "200":
+          description: Named Server-Sent Events
+          content:
+            text/event-stream:
+              schema: {type: string}
+  /api/v1/network-diagnoses:
+    post:
+      operationId: createNetworkDiagnosis
+      responses:
+        "202": {description: Network diagnosis accepted}
+  /api/v1/resources/search:
+    get:
+      operationId: searchResources
+      parameters:
+        - in: query
+          name: q
+          schema: {type: string, maxLength: 200}
+      responses:
+        "200": {description: Resource matches}
+  /api/v1/resources/{kind}/{namespace}/{name}:
+    parameters:
+      - {in: path, name: kind, required: true, schema: {type: string}}
+      - {in: path, name: namespace, required: true, schema: {type: string}}
+      - {in: path, name: name, required: true, schema: {type: string}}
+    get:
+      operationId: getResource
+      responses:
+        "200": {description: Resource snapshot}
+  /api/v1/replays/{incidentId}:
+    parameters:
+      - {in: path, name: incidentId, required: true, schema: {type: string}}
+    post:
+      operationId: replayIncident
+      responses:
+        "202": {description: Replay accepted}
+components:
+  parameters:
+    id:
+      in: path
+      name: id
+      required: true
+      schema: {type: string}
+  schemas:
+    DiagnosisRequest:
+      type: object
+      required: [target]
+      properties:
+        target:
+          type: object
+          required: [kind, name]
+          properties:
+            cluster: {type: string}
+            uid: {type: string}
+            kind: {type: string}
+            namespace: {type: string}
+            name: {type: string}
+        observation: {type: object, additionalProperties: true}
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: {type: string}
+            message: {type: string}
+            requestId: {type: string}
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+
