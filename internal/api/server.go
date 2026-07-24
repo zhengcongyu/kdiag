@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/zhengcongyu/kdiag/internal/diagnosis"
@@ -29,6 +31,8 @@ type Server struct {
 	logger     *slog.Logger
 	mu         sync.Mutex
 	cancels    map[string]context.CancelFunc
+	requests   atomic.Uint64
+	diagnoses  atomic.Uint64
 }
 
 func New(repository repository.Repository, logger *slog.Logger) *Server {
@@ -46,6 +50,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/health", s.health)
 	mux.HandleFunc("GET /api/v1/readiness", s.health)
+	mux.HandleFunc("GET /metrics", s.metrics)
 	mux.HandleFunc("GET /api/v1/clusters", s.clusters)
 	mux.HandleFunc("GET /api/v1/incidents", s.incidents)
 	mux.HandleFunc("GET /api/v1/incidents/{id}", s.incident)
@@ -64,14 +69,26 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if recover() != nil {
+				s.logger.Error("http_panic", "path", r.URL.Path)
+				writeJSON(w, http.StatusInternalServerError, map[string]any{
+					"error": map[string]any{"code": "INTERNAL", "message": "internal server error"},
+				})
+			}
+		}()
 		requestID := r.Header.Get("X-Request-ID")
-		if requestID == "" {
+		if !validRequestID.MatchString(requestID) {
 			requestID = newID()
 		}
 		w.Header().Set("X-Request-ID", requestID)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		started := time.Now()
+		s.requests.Add(1)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), requestIDKey{}, requestID)))
 		s.logger.Info("http_request", "request_id", requestID, "method", r.Method, "path", r.URL.Path, "duration_ms", time.Since(started).Milliseconds())
 	})
@@ -79,6 +96,12 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "time": time.Now().UTC()})
+}
+
+func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	_, _ = fmt.Fprintf(w, "# HELP kdiag_http_requests_total Total HTTP requests.\n# TYPE kdiag_http_requests_total counter\nkdiag_http_requests_total %d\n", s.requests.Load())
+	_, _ = fmt.Fprintf(w, "# HELP kdiag_diagnoses_started_total Total diagnosis tasks accepted.\n# TYPE kdiag_diagnoses_started_total counter\nkdiag_diagnoses_started_total %d\n", s.diagnoses.Load())
 }
 
 func (s *Server) clusters(w http.ResponseWriter, r *http.Request) {
@@ -136,7 +159,7 @@ type diagnosisRequest struct {
 
 func (s *Server) createDiagnosis(w http.ResponseWriter, r *http.Request) {
 	var request diagnosisRequest
-	if err := decodeJSON(r, &request); err != nil {
+	if err := decodeJSON(w, r, &request); err != nil {
 		writeError(w, r, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
 		return
 	}
@@ -156,7 +179,9 @@ func (s *Server) createDiagnosis(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusInternalServerError, "INTERNAL", "unable to create diagnosis")
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	s.diagnoses.Add(1)
+	baseCtx := context.WithoutCancel(r.Context())
+	ctx, cancel := context.WithTimeout(baseCtx, 2*time.Minute)
 	s.mu.Lock()
 	s.cancels[task.ID] = cancel
 	s.mu.Unlock()
@@ -172,7 +197,9 @@ func (s *Server) createDiagnosis(w http.ResponseWriter, r *http.Request) {
 			task.Status, task.Error = model.StatusFailed, "diagnosis execution failed"
 			s.hub.publish(task.ID, diagnosis.Event{Type: "diagnosis_failed", Data: task.Error})
 		}
-		_ = s.repository.SaveTask(context.Background(), task)
+		persistCtx, persistCancel := context.WithTimeout(baseCtx, 5*time.Second)
+		defer persistCancel()
+		_ = s.repository.SaveTask(persistCtx, task)
 	}()
 	writeJSON(w, http.StatusAccepted, task)
 }
@@ -184,7 +211,7 @@ type networkDiagnosisRequest struct {
 
 func (s *Server) createNetworkDiagnosis(w http.ResponseWriter, r *http.Request) {
 	var request networkDiagnosisRequest
-	if err := decodeJSON(r, &request); err != nil {
+	if err := decodeJSON(w, r, &request); err != nil {
 		writeError(w, r, http.StatusBadRequest, "INVALID_ARGUMENT", err.Error())
 		return
 	}
@@ -201,7 +228,9 @@ func (s *Server) createNetworkDiagnosis(w http.ResponseWriter, r *http.Request) 
 		writeError(w, r, http.StatusInternalServerError, "INTERNAL", "unable to create network diagnosis")
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	s.diagnoses.Add(1)
+	baseCtx := context.WithoutCancel(r.Context())
+	ctx, cancel := context.WithTimeout(baseCtx, 2*time.Minute)
 	s.mu.Lock()
 	s.cancels[task.ID] = cancel
 	s.mu.Unlock()
@@ -254,7 +283,9 @@ func (s *Server) createNetworkDiagnosis(w http.ResponseWriter, r *http.Request) 
 		s.hub.publish(task.ID, diagnosis.Event{Type: "hypothesis_updated", Data: hypothesis})
 		finished := time.Now().UTC()
 		task.Status, task.FinishedAt = model.StatusCompleted, &finished
-		_ = s.repository.SaveTask(context.Background(), task)
+		persistCtx, persistCancel := context.WithTimeout(baseCtx, 5*time.Second)
+		defer persistCancel()
+		_ = s.repository.SaveTask(persistCtx, task)
 		s.hub.publish(task.ID, diagnosis.Event{Type: "diagnosis_completed", Data: task})
 	}()
 	writeJSON(w, http.StatusAccepted, task)
@@ -356,8 +387,8 @@ func (s *Server) replay(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, task)
 }
 
-func decodeJSON(r *http.Request, target any) error {
-	r.Body = http.MaxBytesReader(nil, r.Body, 1<<20)
+func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
@@ -385,6 +416,8 @@ func newID() string {
 }
 
 type requestIDKey struct{}
+
+var validRequestID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 func requestID(ctx context.Context) string {
 	value, _ := ctx.Value(requestIDKey{}).(string)

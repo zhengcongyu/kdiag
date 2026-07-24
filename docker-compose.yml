@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: kdiag
       POSTGRES_USER: kdiag
-      POSTGRES_PASSWORD: kdiag-local-only
+      POSTGRES_PASSWORD: ${KDIAG_POSTGRES_PASSWORD:?set KDIAG_POSTGRES_PASSWORD for local development}
     volumes:
       - kdiag-postgres:/var/lib/postgresql/data
       - ./migrations/000001_initial.up.sql:/docker-entrypoint-initdb.d/000001_initial.sql:ro
@@ -20,7 +20,7 @@ services:
       context: .
       dockerfile: deploy/docker/api.Dockerfile
     environment:
-      KDIAG_DATABASE_URL: postgres://kdiag:kdiag-local-only@postgres:5432/kdiag?sslmode=disable
+      KDIAG_DATABASE_URL: postgres://kdiag:${KDIAG_POSTGRES_PASSWORD}@postgres:5432/kdiag?sslmode=disable
       KDIAG_LISTEN_ADDRESS: :8080
     depends_on:
       postgres:

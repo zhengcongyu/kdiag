@@ -22,10 +22,13 @@ spec:
           securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           envFrom:
             - configMapRef: {name: {{ include "kdiag.fullname" . }}}
-          {{- if .Values.api.databaseURL }}
+          {{- if .Values.api.databaseSecret.name }}
           env:
             - name: KDIAG_DATABASE_URL
-              value: {{ .Values.api.databaseURL | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.api.databaseSecret.name | quote }}
+                  key: {{ .Values.api.databaseSecret.key | quote }}
           {{- end }}
           ports: [{name: http, containerPort: 8080}]
           readinessProbe: {httpGet: {path: /api/v1/readiness, port: http}, periodSeconds: 5}

@@ -1,0 +1,17 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Exclude local tool caches and generated dependencies from repository scans"
+paths = [
+  '''(^|[\\/])\.tools([\\/]|$)''',
+  '''(^|[\\/])work([\\/]|$)''',
+  '''(^|[\\/])node_modules([\\/]|$)''',
+  '''(^|[\\/])dist([\\/]|$)''',
+]
+
+[[allowlists]]
+description = "Go module checksums are public integrity hashes, not credentials"
+paths = [
+  '''(^|[\\/])go\.sum$''',
+]

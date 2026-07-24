@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 )
 
@@ -48,14 +47,18 @@ type GuardedProbeRunner struct {
 	enabled bool
 	sem     chan struct{}
 	exec    Executor
-	mu      sync.Mutex
+	allowed map[string]struct{}
 }
 
-func NewGuardedProbeRunner(enabled bool, concurrency int, executor Executor) *GuardedProbeRunner {
+func NewGuardedProbeRunner(enabled bool, concurrency int, executor Executor, allowedTargets ...string) *GuardedProbeRunner {
 	if concurrency < 1 {
 		concurrency = 1
 	}
-	return &GuardedProbeRunner{enabled: enabled, sem: make(chan struct{}, concurrency), exec: executor}
+	allowed := make(map[string]struct{}, len(allowedTargets))
+	for _, target := range allowedTargets {
+		allowed[target] = struct{}{}
+	}
+	return &GuardedProbeRunner{enabled: enabled, sem: make(chan struct{}, concurrency), exec: executor, allowed: allowed}
 }
 
 func (r *GuardedProbeRunner) Run(ctx context.Context, action ProbeAction) (ProbeResult, error) {
@@ -67,6 +70,9 @@ func (r *GuardedProbeRunner) Run(ctx context.Context, action ProbeAction) (Probe
 	}
 	if !validProbeHost(action.Host) {
 		return ProbeResult{}, errors.New("probe target is not allowed")
+	}
+	if _, ok := r.allowed[action.Host]; !ok {
+		return ProbeResult{}, errors.New("probe target is outside the task allowlist")
 	}
 	if action.Kind != ProbeDNS && (action.Port < 1 || action.Port > 65535) {
 		return ProbeResult{}, errors.New("probe port is invalid")

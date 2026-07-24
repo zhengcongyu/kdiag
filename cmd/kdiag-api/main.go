@@ -48,7 +48,9 @@ func main() {
 	httpServer := &http.Server{
 		Addr: address, Handler: api.New(repo, logger).Handler(),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second,
-		WriteTimeout: 0, IdleTimeout: 60 * time.Second,
+		// WriteTimeout is intentionally zero because diagnosis SSE streams may
+		// outlive a fixed response timeout. Per-task contexts bound execution.
+		WriteTimeout: 0, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20,
 	}
 	go func() {
 		logger.Info("api_started", "address", address)

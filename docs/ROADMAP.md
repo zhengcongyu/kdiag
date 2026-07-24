@@ -13,7 +13,11 @@ Status legend: ✅ verified, 🟡 implemented but environment-limited verificati
 - ✅ Phase 7 — network path diagnosis
 - 🟡 Phase 8 — kind fault lab and targetPort E2E
 - 🟡 Phase 9 — Docker Compose, Helm, demo
-- ⬜ Phase 10 — security review, final documentation, release
+- 🟡 Phase 10 — security review, final documentation, release
+
+The yellow phases are blocked on runtime verification in an environment with Docker,
+PostgreSQL, kind, kubectl, and GitHub authentication. The release tag must not be
+created until these gates pass.
 
 ## Beyond v0.1
 

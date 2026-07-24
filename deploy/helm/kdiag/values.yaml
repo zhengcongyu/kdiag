@@ -5,7 +5,9 @@ api:
     repository: ghcr.io/zhengcongyu/kdiag-api
     tag: v0.1.0
   replicas: 1
-  databaseURL: ""
+  databaseSecret:
+    name: ""
+    key: database-url
   resources:
     requests: {cpu: 100m, memory: 128Mi}
     limits: {cpu: 500m, memory: 512Mi}
@@ -39,4 +41,3 @@ containerSecurityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true
   capabilities: {drop: ["ALL"]}
-
