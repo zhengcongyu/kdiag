@@ -40,7 +40,7 @@ export function AppShell() {
         </Box>
         <List component="nav" aria-label="主导航" sx={{px: 1, pt: 1}}>
           {navigation.map(([to, label, Icon]) => (
-            <ListItemButton key={to as string} component={NavLink} to={to as string}
+            <ListItemButton key={to as string} component={NavLink} to={to as string} end={to === "/"}
               sx={{borderRadius: 1.5, minHeight: 42, mb: .35, px: 1.25,
                 "&.active": {bgcolor: "#e8f1ff", color: "primary.main"},
                 "&:focus-visible": {outline: "2px solid #007aff", outlineOffset: 1}}}>
@@ -51,10 +51,18 @@ export function AppShell() {
         </List>
         <Divider sx={{mx: 1.5, my: 1}} />
         <List sx={{px: 1}}>
-          <ListItemButton sx={{borderRadius: 1.5}}><ListItemIcon sx={{minWidth: 34}}><PolicyOutlined sx={{fontSize: 19}} /></ListItemIcon><ListItemText primary="策略与告警" /></ListItemButton>
-          <ListItemButton sx={{borderRadius: 1.5}}><ListItemIcon sx={{minWidth: 34}}><BugReportOutlined sx={{fontSize: 19}} /></ListItemIcon><ListItemText primary="报告中心" /></ListItemButton>
-          <ListItemButton sx={{borderRadius: 1.5}}><ListItemIcon sx={{minWidth: 34}}><AccountTreeOutlined sx={{fontSize: 19}} /></ListItemIcon><ListItemText primary="资源拓扑" /></ListItemButton>
-          <ListItemButton sx={{borderRadius: 1.5}}><ListItemIcon sx={{minWidth: 34}}><SettingsOutlined sx={{fontSize: 19}} /></ListItemIcon><ListItemText primary="系统设置" /></ListItemButton>
+          {[
+            ["/policies", "策略与告警", PolicyOutlined],
+            ["/reports", "报告中心", BugReportOutlined],
+            ["/topology", "资源拓扑", AccountTreeOutlined],
+            ["/settings", "系统设置", SettingsOutlined]
+          ].map(([to, label, Icon]) => (
+            <ListItemButton key={to as string} component={NavLink} to={to as string}
+              sx={{borderRadius: 1.5, "&.active": {bgcolor: "#e8f1ff", color: "primary.main"}}}>
+              <ListItemIcon sx={{minWidth: 34, color: "inherit"}}><Icon sx={{fontSize: 19}} /></ListItemIcon>
+              <ListItemText primary={label as string} />
+            </ListItemButton>
+          ))}
         </List>
         <Box sx={{mt: "auto", p: 1.5}}>
           <Box sx={{p: 1.2, border: "1px solid", borderColor: "divider", borderRadius: 1.5, bgcolor: "#fff", mb: 1}}>
@@ -69,7 +77,7 @@ export function AppShell() {
               {connection?.serverVersion ?? "等待集群版本"}
             </Typography>
           </Box>
-          <Typography variant="caption" color="text.secondary">KDiag v0.2.0-dev</Typography>
+          <Typography variant="caption" color="text.secondary">KDiag v0.2.1</Typography>
         </Box>
       </Box>
       <Box component="main" sx={{ml: "188px", minWidth: 0, width: "calc(100% - 188px)"}}>

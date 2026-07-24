@@ -4,6 +4,25 @@ All notable changes are documented here. The format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-24
+
+### Added
+
+- Live Kubernetes-backed selectors for diagnosis resources, network sources,
+  target Services and ports, topology centers, namespaces, and replay
+  Incidents. Resource names are no longer typed manually.
+- Functional policy and alert, report center, resource topology, and system
+  settings workspaces, all driven by live API data and explicit coverage
+  states.
+- Client-side construction of the network diagnosis snapshot from current
+  informer inventory while retaining the active-probe-off safety default.
+
+### Changed
+
+- Incident namespace filtering now uses values observed from the system.
+- Live selector queries refresh every 15 seconds and expose loading, error, and
+  empty states.
+
 ## [0.2.0] - 2026-07-24
 
 ### Added

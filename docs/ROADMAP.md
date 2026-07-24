@@ -25,6 +25,8 @@ created until these gates pass.
   informer-backed inventory API, resource relationships, cluster-wide filters,
   detailed object inspector, and an iOS-inspired resource workspace.
 - Multi-cluster credentials via external secret managers.
+- Live API-backed workflow selectors and policy, report, topology, and settings
+  workspaces are delivered in v0.2.1.
 - CNI-specific flow evidence adapters.
 - Signed rule bundles and rule authoring SDK.
 - Retention policies and object storage references.

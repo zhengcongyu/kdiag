@@ -16,6 +16,9 @@ export function IncidentsPage() {
   const [namespace, setNamespace] = useState("");
   const [text, setText] = useState("");
   const [page, setPage] = useState(1);
+  const namespaces = useMemo(() => Array.from(new Set(
+    (query.data?.items ?? []).map((item) => item.namespace).filter((value): value is string => Boolean(value))
+  )).sort(), [query.data]);
   const filtered = useMemo(() => (query.data?.items ?? []).filter((item) =>
     (severity === "all" || item.severity === severity) &&
     (status === "all" || item.status === status) &&
@@ -36,7 +39,11 @@ export function IncidentsPage() {
         <Select label="状态" value={status} onChange={(e) => setStatus(e.target.value)}>
           {["all","open","resolved"].map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}
         </Select></FormControl>
-      <TextField size="small" label="Namespace" value={namespace} onChange={(e) => setNamespace(e.target.value)} />
+      <TextField select size="small" label="Namespace" value={namespace}
+        sx={{minWidth: 160}} onChange={(e) => setNamespace(e.target.value)}>
+        <MenuItem value="">全部</MenuItem>
+        {namespaces.map((value) => <MenuItem key={value} value={value}>{value}</MenuItem>)}
+      </TextField>
       <TextField size="small" label="搜索标题或摘要" value={text} onChange={(e) => setText(e.target.value)} />
     </Stack>
     {pageItems.length === 0 ? <EmptyState title="没有匹配的 Incident" detail="调整筛选条件；如果采集尚未同步，此处不会推断集群健康。" /> :
@@ -51,4 +58,3 @@ export function IncidentsPage() {
     <Pagination page={page} onChange={(_, value) => setPage(value)} count={Math.max(1, Math.ceil(filtered.length / 10))} />
   </Stack>;
 }
-

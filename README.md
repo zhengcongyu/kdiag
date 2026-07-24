@@ -118,8 +118,15 @@ The CLI calls the API; it does not contain a second diagnosis engine.
 - Incident detail: conclusion and impact first; steps, Evidence, topology,
   timeline, remediation, and verification in separate tabs.
 - Resource diagnosis: starts an API task and renders SSE events.
-- Network diagnosis: path-oriented static checks; active probing remains off.
-- Replay: creates a task from a saved Incident snapshot.
+- Network diagnosis: live source/Service/port selection and path-oriented
+  static checks; active probing remains off.
+- Replay: selects a saved Incident and creates a task from its snapshot.
+- Policy and alerts, report center, resource topology, and system settings:
+  live read-only operational views with honest coverage and empty states.
+
+All Kubernetes object and Incident identifiers used to start a workflow are
+selected from live API results and refreshed every 15 seconds; they are not
+free-form resource-name inputs.
 
 Raw technical detail is secondary to user-facing language such as “Service
 currently has no healthy backend Pods.” Missing data is never rendered as “no
@@ -191,8 +198,8 @@ NetworkPolicy. See [the security policy](SECURITY.md).
   are not discovered automatically yet.
 - An “unknown” resource is visible but does not yet have a health classifier;
   unknown never means healthy.
-- The network API currently requires a prepared snapshot; live snapshot
-  construction from informer caches is planned.
+- The Web console constructs network snapshots from live informer inventory;
+  direct API clients must still submit a prepared snapshot.
 - Static NetworkPolicy reasoning cannot prove CNI dataplane behavior. KDiag
   never claims complete network health without traffic evidence.
 - PostgreSQL integration and Compose/kind execution remain environment-limited

@@ -31,6 +31,8 @@ KDiag 不是普通 Kubernetes Dashboard。它以可解释 Incident 为中心，E
 - React + TypeScript 控制台：可过滤的“集群全景”、资源完整详情/关系/Event/
   脱敏原始对象、概览、Incident 列表/详情、证据、拓扑、时间线、资源诊断、
   网络诊断和历史回放。
+- 诊断、网络追踪、拓扑和回放中的资源名称均从实时 API 下拉选择，每 15 秒刷新，
+  不再要求手工输入；策略与告警、报告中心、资源拓扑和系统设置页面已补齐。
 - Service selector、EndpointSlice、Ready Endpoint、数值/命名 targetPort、
   容器端口与 NetworkPolicy 能力边界的网络静态分析。
 - API 客户端 CLI、Docker Compose、非 root 镜像、Helm Chart、7 个 kind 故障
@@ -127,7 +129,7 @@ Identity-Aware Ingress 和严格 NetworkPolicy。
 
 - 实时清单当前覆盖 20 类常用原生资源，尚未自动发现和观察任意 CRD 实例。
 - “未评估”表示该资源可查看、但当前没有健康判定规则，不代表异常或健康。
-- 网络 API 目前需要预构造快照，尚未从 informer cache 自动生成。
+- Web 控制台会从实时 informer 清单构造网络快照；直接调用网络 API 时仍需提交快照。
 - 静态 NetworkPolicy 分析不能证明 CNI 数据面实际正常。
 - PostgreSQL 集成、Compose 和 kind E2E 仍是待执行发布门禁。
 - Helm 的独立 Probe Runner 默认关闭，独立运行命令尚未交付。
