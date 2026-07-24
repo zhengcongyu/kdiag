@@ -13,7 +13,7 @@ import (
 func TestObservationProviderBuildsStructuredPodEvidence(t *testing.T) {
 	store := inventory.NewStore(inventory.Connection{Name: "test", Status: "connected"})
 	pod := model.Resource{
-		Ref: model.ResourceRef{Cluster: "test", UID: "pod-1", Kind: "Pod", Namespace: "default", Name: "payment"},
+		Ref:  model.ResourceRef{Cluster: "test", UID: "pod-1", Kind: "Pod", Namespace: "default", Name: "payment"},
 		Spec: json.RawMessage(`{"containers":[{"ports":[{"name":"http","containerPort":8080}]}]}`),
 		Status: json.RawMessage(`{
 			"phase":"Running",
@@ -59,22 +59,22 @@ func TestObservationProviderBuildsStructuredPodEvidence(t *testing.T) {
 func TestObservationProviderBuildsServiceChainEvidence(t *testing.T) {
 	store := inventory.NewStore(inventory.Connection{Name: "test", Status: "connected"})
 	service := model.Resource{
-		Ref: model.ResourceRef{Cluster: "test", UID: "svc-1", Kind: "Service", Namespace: "default", Name: "payment"},
-		Spec: json.RawMessage(`{"selector":{"app":"payment"},"ports":[{"port":80,"targetPort":"http"}]}`),
+		Ref:      model.ResourceRef{Cluster: "test", UID: "svc-1", Kind: "Service", Namespace: "default", Name: "payment"},
+		Spec:     json.RawMessage(`{"selector":{"app":"payment"},"ports":[{"port":80,"targetPort":"http"}]}`),
 		Observed: time.Now().UTC(),
 	}
 	applyResource(store, service)
 	applyResource(store, model.Resource{
-		Ref: model.ResourceRef{Cluster: "test", UID: "pod-1", Kind: "Pod", Namespace: "default", Name: "payment-a"},
-		Labels: map[string]string{"app": "payment"},
-		Spec: json.RawMessage(`{"containers":[{"ports":[{"name":"metrics","containerPort":9090}]}]}`),
-		Status: json.RawMessage(`{"phase":"Running","conditions":[{"type":"Ready","status":"True"}]}`),
+		Ref:      model.ResourceRef{Cluster: "test", UID: "pod-1", Kind: "Pod", Namespace: "default", Name: "payment-a"},
+		Labels:   map[string]string{"app": "payment"},
+		Spec:     json.RawMessage(`{"containers":[{"ports":[{"name":"metrics","containerPort":9090}]}]}`),
+		Status:   json.RawMessage(`{"phase":"Running","conditions":[{"type":"Ready","status":"True"}]}`),
 		Observed: time.Now().UTC(),
 	})
 	applyResource(store, model.Resource{
-		Ref: model.ResourceRef{Cluster: "test", UID: "slice-1", Kind: "EndpointSlice", Namespace: "default", Name: "payment-x"},
-		Labels: map[string]string{"kubernetes.io/service-name": "payment"},
-		Spec: json.RawMessage(`{"endpoints":[{"addresses":["10.0.0.2"],"conditions":{"ready":true}}]}`),
+		Ref:      model.ResourceRef{Cluster: "test", UID: "slice-1", Kind: "EndpointSlice", Namespace: "default", Name: "payment-x"},
+		Labels:   map[string]string{"kubernetes.io/service-name": "payment"},
+		Spec:     json.RawMessage(`{"endpoints":[{"addresses":["10.0.0.2"],"conditions":{"ready":true}}]}`),
 		Observed: time.Now().UTC(),
 	})
 	got, err := NewObservationProvider(store).Build(service.Ref)
@@ -91,11 +91,11 @@ func TestObservationProviderBuildsServiceChainEvidence(t *testing.T) {
 func TestObservationProviderBuildsPVCAndNodeEvidence(t *testing.T) {
 	store := inventory.NewStore(inventory.Connection{Name: "test", Status: "connected"})
 	pvc := model.Resource{
-		Ref: model.ResourceRef{Cluster: "test", UID: "pvc-1", Kind: "PersistentVolumeClaim", Namespace: "default", Name: "data"},
+		Ref:    model.ResourceRef{Cluster: "test", UID: "pvc-1", Kind: "PersistentVolumeClaim", Namespace: "default", Name: "data"},
 		Status: json.RawMessage(`{"phase":"Pending"}`), Observed: time.Now().UTC(),
 	}
 	node := model.Resource{
-		Ref: model.ResourceRef{Cluster: "test", UID: "node-1", Kind: "Node", Name: "worker-1"},
+		Ref:    model.ResourceRef{Cluster: "test", UID: "node-1", Kind: "Node", Name: "worker-1"},
 		Status: json.RawMessage(`{"conditions":[{"type":"Ready","status":"False"}]}`), Observed: time.Now().UTC(),
 	}
 	applyResource(store, pvc)
