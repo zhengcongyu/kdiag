@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/zhengcongyu/kdiag/internal/api"
+	"github.com/zhengcongyu/kdiag/internal/inventory"
 	"github.com/zhengcongyu/kdiag/internal/repository"
 )
 
@@ -26,6 +27,8 @@ func main() {
 		return
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	appCtx, cancelApp := context.WithCancel(context.Background())
+	defer cancelApp()
 	var repo repository.Repository
 	var closeRepository func()
 	if databaseURL := os.Getenv("KDIAG_DATABASE_URL"); databaseURL != "" {
@@ -41,12 +44,20 @@ func main() {
 	}
 	defer closeRepository()
 
+	var resourceInventory inventory.Reader = inventory.Disconnected("未找到集群内身份或有效 kubeconfig")
+	if manager, err := inventory.NewAuto(logger); err != nil {
+		logger.Warn("kubernetes_auto_connect_unavailable", "error", err)
+	} else {
+		resourceInventory = manager.Reader()
+		go manager.Run(appCtx)
+	}
+
 	address := os.Getenv("KDIAG_LISTEN_ADDRESS")
 	if address == "" {
 		address = ":8080"
 	}
 	httpServer := &http.Server{
-		Addr: address, Handler: api.New(repo, logger).Handler(),
+		Addr: address, Handler: api.NewWithInventory(repo, logger, resourceInventory).Handler(),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second,
 		// WriteTimeout is intentionally zero because diagnosis SSE streams may
 		// outlive a fixed response timeout. Per-task contexts bound execution.
@@ -63,6 +74,7 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
+	cancelApp()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := httpServer.Shutdown(ctx); err != nil {

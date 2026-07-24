@@ -23,13 +23,20 @@ type OwnerReference struct {
 }
 
 type Resource struct {
-	Ref       ResourceRef       `json:"ref"`
-	Owners    []OwnerReference  `json:"owners,omitempty"`
-	Labels    map[string]string `json:"labels,omitempty"`
-	Spec      json.RawMessage   `json:"spec,omitempty"`
-	Status    json.RawMessage   `json:"status,omitempty"`
-	Observed  time.Time         `json:"observed"`
-	DeletedAt *time.Time        `json:"deletedAt,omitempty"`
+	Ref             ResourceRef       `json:"ref"`
+	APIVersion      string            `json:"apiVersion,omitempty"`
+	ResourceVersion string            `json:"resourceVersion,omitempty"`
+	Generation      int64             `json:"generation,omitempty"`
+	CreatedAt       time.Time         `json:"createdAt,omitempty"`
+	Owners          []OwnerReference  `json:"owners,omitempty"`
+	Labels          map[string]string `json:"labels,omitempty"`
+	Annotations     map[string]string `json:"annotations,omitempty"`
+	Finalizers      []string          `json:"finalizers,omitempty"`
+	Spec            json.RawMessage   `json:"spec,omitempty"`
+	Status          json.RawMessage   `json:"status,omitempty"`
+	Raw             json.RawMessage   `json:"raw,omitempty"`
+	Observed        time.Time         `json:"observed"`
+	DeletedAt       *time.Time        `json:"deletedAt,omitempty"`
 }
 
 type EvidenceRole string

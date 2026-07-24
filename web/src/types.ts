@@ -69,3 +69,65 @@ export interface DiagnosisTask {
   hypotheses: Hypothesis[];
 }
 
+export type ResourceState = "healthy" | "warning" | "critical" | "unknown";
+
+export interface ClusterConnection {
+  name: string;
+  status: "connected" | "syncing" | "degraded" | "disconnected";
+  mode: string;
+  server?: string;
+  serverVersion?: string;
+  message?: string;
+  syncedAt?: string;
+}
+
+export interface InventoryResource {
+  ref: ResourceRef;
+  apiVersion?: string;
+  resourceVersion?: string;
+  generation?: number;
+  createdAt?: string;
+  owners?: {uid: string; kind: string; name: string; controller: boolean}[];
+  labels?: Record<string, string>;
+  annotations?: Record<string, string>;
+  finalizers?: string[];
+  spec?: Record<string, unknown>;
+  status?: Record<string, unknown>;
+  raw?: Record<string, unknown>;
+  observed: string;
+  group: string;
+  state: ResourceState;
+  stateText: string;
+  ready?: string;
+  node?: string;
+  ip?: string;
+  summary?: string;
+  recentEvent?: string;
+  recentEventAt?: string;
+  relations?: {type: string; resource: ResourceRef}[];
+}
+
+export interface InventoryFacets {
+  kinds: Record<string, number>;
+  groups: Record<string, number>;
+  namespaces: string[];
+  nodes: string[];
+  states: Record<ResourceState, number>;
+}
+
+export interface InventoryResult {
+  items: InventoryResource[];
+  total: number;
+  offset: number;
+  limit: number;
+  facets: InventoryFacets;
+  observedAt: string;
+}
+
+export interface ClusterOverview {
+  connection: ClusterConnection;
+  total: number;
+  facets: InventoryFacets;
+  observedAt: string;
+  coverage: {source: string; secrets: boolean; message: string};
+}

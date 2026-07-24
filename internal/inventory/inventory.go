@@ -1,0 +1,777 @@
+package inventory
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/zhengcongyu/kdiag/internal/collector"
+	"github.com/zhengcongyu/kdiag/pkg/model"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+)
+
+const (
+	StateHealthy  = "healthy"
+	StateWarning  = "warning"
+	StateCritical = "critical"
+	StateUnknown  = "unknown"
+)
+
+type Connection struct {
+	Name          string    `json:"name"`
+	Status        string    `json:"status"`
+	Mode          string    `json:"mode"`
+	Server        string    `json:"server,omitempty"`
+	ServerVersion string    `json:"serverVersion,omitempty"`
+	Message       string    `json:"message,omitempty"`
+	SyncedAt      time.Time `json:"syncedAt,omitempty"`
+}
+
+type Query struct {
+	Kind      string
+	Group     string
+	Namespace string
+	Node      string
+	State     string
+	Label     string
+	Search    string
+	Offset    int
+	Limit     int
+}
+
+type Relation struct {
+	Type     string            `json:"type"`
+	Resource model.ResourceRef `json:"resource"`
+}
+
+type Item struct {
+	model.Resource
+	Group         string     `json:"group"`
+	State         string     `json:"state"`
+	StateText     string     `json:"stateText"`
+	Ready         string     `json:"ready,omitempty"`
+	Node          string     `json:"node,omitempty"`
+	IP            string     `json:"ip,omitempty"`
+	Summary       string     `json:"summary,omitempty"`
+	RecentEvent   string     `json:"recentEvent,omitempty"`
+	RecentEventAt *time.Time `json:"recentEventAt,omitempty"`
+	Relations     []Relation `json:"relations,omitempty"`
+}
+
+type Facets struct {
+	Kinds      map[string]int `json:"kinds"`
+	Groups     map[string]int `json:"groups"`
+	Namespaces []string       `json:"namespaces"`
+	Nodes      []string       `json:"nodes"`
+	States     map[string]int `json:"states"`
+}
+
+type Result struct {
+	Items    []Item    `json:"items"`
+	Total    int       `json:"total"`
+	Offset   int       `json:"offset"`
+	Limit    int       `json:"limit"`
+	Facets   Facets    `json:"facets"`
+	Observed time.Time `json:"observedAt"`
+}
+
+type Reader interface {
+	Connection() Connection
+	List(Query) Result
+	Get(string) (Item, error)
+}
+
+type Store struct {
+	mu         sync.RWMutex
+	connection Connection
+	resources  map[string]model.Resource
+}
+
+func NewStore(connection Connection) *Store {
+	return &Store{connection: connection, resources: map[string]model.Resource{}}
+}
+
+func (s *Store) SetConnection(connection Connection) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.connection = connection
+}
+
+func (s *Store) Connection() Connection {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.connection
+}
+
+func (s *Store) Apply(change collector.Change) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if change.Type == collector.Deleted {
+		delete(s.resources, change.Resource.Ref.UID)
+		return
+	}
+	s.resources[change.Resource.Ref.UID] = change.Resource
+}
+
+func (s *Store) List(query Query) Result {
+	s.mu.RLock()
+	resources := make([]model.Resource, 0, len(s.resources))
+	for _, resource := range s.resources {
+		resources = append(resources, resource)
+	}
+	s.mu.RUnlock()
+
+	items := decorate(resources)
+	facets := buildFacets(items)
+	filtered := make([]Item, 0, len(items))
+	for _, item := range items {
+		if matches(item, query) {
+			filtered = append(filtered, item)
+		}
+	}
+	sort.Slice(filtered, func(i, j int) bool {
+		left, right := severityRank(filtered[i].State), severityRank(filtered[j].State)
+		if left != right {
+			return left < right
+		}
+		if filtered[i].Ref.Namespace != filtered[j].Ref.Namespace {
+			return filtered[i].Ref.Namespace < filtered[j].Ref.Namespace
+		}
+		if filtered[i].Ref.Kind != filtered[j].Ref.Kind {
+			return filtered[i].Ref.Kind < filtered[j].Ref.Kind
+		}
+		return filtered[i].Ref.Name < filtered[j].Ref.Name
+	})
+	total := len(filtered)
+	offset := query.Offset
+	if offset < 0 || offset > total {
+		offset = 0
+	}
+	limit := query.Limit
+	if limit < 1 || limit > 200 {
+		limit = 50
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return Result{
+		Items: filtered[offset:end], Total: total, Offset: offset, Limit: limit,
+		Facets: facets, Observed: time.Now().UTC(),
+	}
+}
+
+func (s *Store) Get(uid string) (Item, error) {
+	s.mu.RLock()
+	resources := make([]model.Resource, 0, len(s.resources))
+	found := false
+	for _, resource := range s.resources {
+		resources = append(resources, resource)
+		if resource.Ref.UID == uid {
+			found = true
+		}
+	}
+	s.mu.RUnlock()
+	if !found {
+		return Item{}, errors.New("resource not found")
+	}
+	for _, item := range decorate(resources) {
+		if item.Ref.UID == uid {
+			return item, nil
+		}
+	}
+	return Item{}, errors.New("resource not found")
+}
+
+type Manager struct {
+	store     *Store
+	collector collector.Collector
+	logger    *slog.Logger
+}
+
+func NewAuto(logger *slog.Logger) (*Manager, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	config, name, mode, err := loadConfig()
+	if err != nil {
+		return nil, err
+	}
+	config.UserAgent = "kdiag/0.2"
+	config.Timeout = 30 * time.Second
+	client, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("create Kubernetes dynamic client: %w", err)
+	}
+	version := ""
+	if discoveryClient, discoveryErr := discovery.NewDiscoveryClientForConfig(config); discoveryErr == nil {
+		if info, versionErr := discoveryClient.ServerVersion(); versionErr == nil {
+			version = info.GitVersion
+		}
+	}
+	connection := Connection{
+		Name: name, Status: "syncing", Mode: mode, Server: config.Host,
+		ServerVersion: version, Message: "正在同步 Kubernetes API 缓存",
+	}
+	return &Manager{
+		store: NewStore(connection), collector: collector.NewKubernetes(name, client, 0),
+		logger: logger,
+	}, nil
+}
+
+func Disconnected(message string) *Store {
+	return NewStore(Connection{
+		Name: "local-k8s", Status: "disconnected", Mode: "unavailable",
+		Message: message,
+	})
+}
+
+func (m *Manager) Reader() Reader { return m.store }
+
+func (m *Manager) Run(ctx context.Context) {
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case change := <-m.collector.Changes():
+				m.store.Apply(change)
+			}
+		}
+	}()
+	if err := m.collector.Start(ctx); err != nil {
+		m.fail(err)
+		return
+	}
+	syncCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	if err := m.collector.WaitForSync(syncCtx); err != nil {
+		m.fail(err)
+		return
+	}
+	connection := m.store.Connection()
+	connection.Status = "connected"
+	connection.Message = "Informer 缓存已同步"
+	connection.SyncedAt = time.Now().UTC()
+	m.store.SetConnection(connection)
+	m.logger.Info("kubernetes_inventory_synced", "cluster", connection.Name, "version", connection.ServerVersion)
+	<-ctx.Done()
+}
+
+func (m *Manager) fail(err error) {
+	connection := m.store.Connection()
+	connection.Status = "degraded"
+	connection.Message = "Kubernetes 缓存同步失败：" + err.Error()
+	m.store.SetConnection(connection)
+	m.logger.Error("kubernetes_inventory_failed", "error", err)
+}
+
+func loadConfig() (*rest.Config, string, string, error) {
+	if config, err := rest.InClusterConfig(); err == nil {
+		name := strings.TrimSpace(os.Getenv("KDIAG_CLUSTER_NAME"))
+		if name == "" {
+			name = "local-k8s"
+		}
+		return config, name, "in-cluster", nil
+	}
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if path := strings.TrimSpace(os.Getenv("KDIAG_KUBECONFIG")); path != "" {
+		rules.ExplicitPath = path
+	}
+	deferred := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{})
+	raw, err := deferred.RawConfig()
+	if err != nil {
+		return nil, "", "", fmt.Errorf("load kubeconfig: %w", err)
+	}
+	config, err := deferred.ClientConfig()
+	if err != nil {
+		return nil, "", "", fmt.Errorf("build kubeconfig client: %w", err)
+	}
+	name := raw.CurrentContext
+	if override := strings.TrimSpace(os.Getenv("KDIAG_CLUSTER_NAME")); override != "" {
+		name = override
+	}
+	if name == "" {
+		name = "local-k8s"
+	}
+	return config, name, "kubeconfig", nil
+}
+
+func decorate(resources []model.Resource) []Item {
+	byUID := make(map[string]model.Resource, len(resources))
+	for _, resource := range resources {
+		byUID[resource.Ref.UID] = resource
+	}
+	items := make([]Item, 0, len(resources))
+	for _, resource := range resources {
+		state, text, ready, node, ip, summary := summarize(resource, resources)
+		item := Item{
+			Resource: resource, Group: resourceGroup(resource.Ref.Kind),
+			State: state, StateText: text, Ready: ready, Node: node, IP: ip, Summary: summary,
+		}
+		item.RecentEvent, item.RecentEventAt = recentEvent(resource.Ref.UID, resources)
+		for _, owner := range resource.Owners {
+			if related, ok := byUID[owner.UID]; ok {
+				item.Relations = append(item.Relations, Relation{Type: "owned-by", Resource: related.Ref})
+			}
+		}
+		item.Relations = append(item.Relations, directRelations(resource, resources)...)
+		items = append(items, item)
+	}
+	return items
+}
+
+func recentEvent(uid string, resources []model.Resource) (string, *time.Time) {
+	var latest time.Time
+	summary := ""
+	for _, resource := range resources {
+		if resource.Ref.Kind != "Event" {
+			continue
+		}
+		raw := rawMap(resource.Raw)
+		involved, _ := raw["involvedObject"].(map[string]any)
+		if stringValue(involved["uid"]) != uid {
+			continue
+		}
+		at := eventTime(raw)
+		if latest.IsZero() || at.After(latest) {
+			latest = at
+			summary = valueOr(stringValue(raw["reason"]), stringValue(raw["message"]))
+		}
+	}
+	if latest.IsZero() {
+		return summary, nil
+	}
+	return summary, &latest
+}
+
+func eventTime(raw map[string]any) time.Time {
+	for _, key := range []string{"eventTime", "lastTimestamp", "firstTimestamp"} {
+		if value := stringValue(raw[key]); value != "" {
+			if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+				return parsed
+			}
+		}
+	}
+	return time.Time{}
+}
+
+func directRelations(resource model.Resource, resources []model.Resource) []Relation {
+	relations := []Relation{}
+	if resource.Ref.Kind == "Service" {
+		selector := nestedStringMap(resource.Spec, "selector")
+		for _, candidate := range resources {
+			if candidate.Ref.Namespace != resource.Ref.Namespace {
+				continue
+			}
+			if candidate.Ref.Kind == "EndpointSlice" && candidate.Labels["kubernetes.io/service-name"] == resource.Ref.Name {
+				relations = append(relations, Relation{Type: "represented-by", Resource: candidate.Ref})
+			}
+			if candidate.Ref.Kind == "Pod" && labelsMatch(selector, candidate.Labels) {
+				relations = append(relations, Relation{Type: "selects", Resource: candidate.Ref})
+			}
+		}
+	}
+	if resource.Ref.Kind == "EndpointSlice" {
+		serviceName := resource.Labels["kubernetes.io/service-name"]
+		for _, candidate := range resources {
+			if candidate.Ref.Kind == "Service" && candidate.Ref.Namespace == resource.Ref.Namespace && candidate.Ref.Name == serviceName {
+				relations = append(relations, Relation{Type: "represents", Resource: candidate.Ref})
+			}
+		}
+	}
+	sort.Slice(relations, func(i, j int) bool {
+		return relations[i].Resource.Kind+"/"+relations[i].Resource.Name < relations[j].Resource.Kind+"/"+relations[j].Resource.Name
+	})
+	return relations
+}
+
+func summarize(resource model.Resource, all []model.Resource) (state, text, ready, node, ip, summary string) {
+	state, text = StateUnknown, "未知"
+	spec, status := rawMap(resource.Spec), rawMap(resource.Status)
+	switch resource.Ref.Kind {
+	case "Node":
+		for _, condition := range nestedSlice(status, "conditions") {
+			if stringValue(condition["type"]) == "Ready" {
+				if stringValue(condition["status"]) == "True" {
+					return StateHealthy, "就绪", "1/1", "", nodeAddress(status), "节点 Ready 条件为 True"
+				}
+				return StateCritical, "未就绪", "0/1", "", nodeAddress(status), "节点 Ready 条件不为 True"
+			}
+		}
+		return StateUnknown, "缺少 Ready 条件", "", "", nodeAddress(status), "无法确认节点就绪状态"
+	case "Pod":
+		node, ip = stringValue(spec["nodeName"]), stringValue(status["podIP"])
+		phase := stringValue(status["phase"])
+		containerStatuses := nestedSlice(status, "containerStatuses")
+		readyCount := 0
+		for _, container := range containerStatuses {
+			if value, ok := container["ready"].(bool); ok && value {
+				readyCount++
+			}
+			if waiting := nestedMap(container, "state", "waiting"); waiting != nil {
+				reason := stringValue(waiting["reason"])
+				if reason != "" && reason != "ContainerCreating" && reason != "PodInitializing" {
+					return StateCritical, reason, fmt.Sprintf("%d/%d", readyCount, len(containerStatuses)), node, ip, "容器处于 " + reason
+				}
+			}
+		}
+		ready = fmt.Sprintf("%d/%d", readyCount, len(containerStatuses))
+		if phase == "Succeeded" {
+			return StateHealthy, "已完成", ready, node, ip, "Pod 已成功完成"
+		}
+		if phase == "Failed" {
+			return StateCritical, "失败", ready, node, ip, "Pod phase 为 Failed"
+		}
+		if phase == "Running" && len(containerStatuses) > 0 && readyCount == len(containerStatuses) {
+			return StateHealthy, "就绪", ready, node, ip, "所有容器已就绪"
+		}
+		if phase == "Pending" {
+			return StateWarning, "等待中", ready, node, ip, "Pod 仍在等待调度或启动"
+		}
+		return StateWarning, "未就绪", ready, node, ip, "Pod 尚未全部就绪"
+	case "Deployment", "StatefulSet", "ReplicaSet":
+		desired := intValue(spec["replicas"])
+		available := intValue(status["availableReplicas"])
+		if resource.Ref.Kind == "ReplicaSet" {
+			available = intValue(status["readyReplicas"])
+		}
+		ready = fmt.Sprintf("%d/%d", available, desired)
+		if desired == 0 {
+			return StateHealthy, "已缩容", ready, "", "", "期望副本为 0"
+		}
+		if desired > 0 && available >= desired {
+			return StateHealthy, "可用", ready, "", "", "期望副本均已可用"
+		}
+		if available == 0 && desired > 0 {
+			return StateCritical, "不可用", ready, "", "", "没有可用副本"
+		}
+		return StateWarning, "部分可用", ready, "", "", "可用副本少于期望值"
+	case "DaemonSet":
+		desired, available := intValue(status["desiredNumberScheduled"]), intValue(status["numberAvailable"])
+		ready = fmt.Sprintf("%d/%d", available, desired)
+		if desired > 0 && available >= desired {
+			return StateHealthy, "可用", ready, "", "", "所有目标节点均有可用 Pod"
+		}
+		return StateWarning, "部分可用", ready, "", "", "部分目标节点没有可用 Pod"
+	case "Service":
+		clusterIP := stringValue(spec["clusterIP"])
+		readyEndpoints, totalEndpoints := endpointCounts(resource, all)
+		ready = fmt.Sprintf("%d/%d", readyEndpoints, totalEndpoints)
+		if stringValue(spec["type"]) == "ExternalName" {
+			return StateHealthy, "外部名称", "", "", stringValue(spec["externalName"]), "ExternalName Service 不使用 EndpointSlice"
+		}
+		if totalEndpoints == 0 {
+			return StateCritical, "无端点", ready, "", clusterIP, "Service 当前没有可以接收请求的后端 Pod"
+		}
+		if readyEndpoints == 0 {
+			return StateCritical, "端点未就绪", ready, "", clusterIP, "EndpointSlice 中 Ready Endpoint 数量为 0"
+		}
+		if readyEndpoints < totalEndpoints {
+			return StateWarning, "部分就绪", ready, "", clusterIP, "部分 Endpoint 尚未就绪"
+		}
+		return StateHealthy, "端点就绪", ready, "", clusterIP, "所有 Endpoint 均已就绪"
+	case "EndpointSlice":
+		readyEndpoints, totalEndpoints := sliceEndpointCounts(spec)
+		ready = fmt.Sprintf("%d/%d", readyEndpoints, totalEndpoints)
+		if totalEndpoints == 0 || readyEndpoints == 0 {
+			return StateCritical, "无就绪端点", ready, "", "", "没有 Ready Endpoint"
+		}
+		if readyEndpoints < totalEndpoints {
+			return StateWarning, "部分就绪", ready, "", "", "部分 Endpoint 尚未就绪"
+		}
+		return StateHealthy, "端点就绪", ready, "", "", "EndpointSlice 有可用后端"
+	case "PersistentVolumeClaim":
+		phase := stringValue(status["phase"])
+		if phase == "Bound" {
+			return StateHealthy, "已绑定", "1/1", "", stringValue(spec["volumeName"]), "PVC 已绑定到 PersistentVolume"
+		}
+		if phase == "Lost" {
+			return StateCritical, "已丢失", "0/1", "", "", "PVC 绑定已丢失"
+		}
+		return StateWarning, valueOr(phase, "等待中"), "0/1", "", "", "PVC 尚未绑定"
+	case "PersistentVolume":
+		phase := stringValue(status["phase"])
+		if phase == "Bound" || phase == "Available" {
+			return StateHealthy, phase, "", "", "", "PersistentVolume 可用"
+		}
+		if phase == "Failed" {
+			return StateCritical, "失败", "", "", "", "PersistentVolume phase 为 Failed"
+		}
+		return StateWarning, valueOr(phase, "未知"), "", "", "", "PersistentVolume 状态需要检查"
+	case "Job":
+		completions := intValue(spec["completions"])
+		if completions == 0 {
+			completions = 1
+		}
+		succeeded, failed := intValue(status["succeeded"]), intValue(status["failed"])
+		ready = fmt.Sprintf("%d/%d", succeeded, completions)
+		if failed > 0 {
+			return StateCritical, "失败", ready, "", "", "Job 有失败的 Pod"
+		}
+		if succeeded >= completions {
+			return StateHealthy, "已完成", ready, "", "", "Job 已达到完成数"
+		}
+		return StateWarning, "运行中", ready, "", "", "Job 尚未完成"
+	case "Event":
+		raw := rawMap(resource.Raw)
+		eventType, reason := stringValue(raw["type"]), stringValue(raw["reason"])
+		if eventType == "Warning" {
+			return StateWarning, valueOr(reason, "警告"), "", "", "", stringValue(raw["message"])
+		}
+		return StateHealthy, valueOr(reason, "正常"), "", "", "", stringValue(raw["message"])
+	default:
+		if conditionState, conditionText, ok := summarizeConditions(status); ok {
+			return conditionState, conditionText, "", "", "", "基于结构化 Condition 汇总"
+		}
+		return StateUnknown, "未评估", "", "", "", "KDiag 尚未为此资源类型定义健康判定；详细字段仍可查看"
+	}
+}
+
+func buildFacets(items []Item) Facets {
+	facets := Facets{
+		Kinds: map[string]int{}, Groups: map[string]int{},
+		States: map[string]int{},
+	}
+	namespaces, nodes := map[string]struct{}{}, map[string]struct{}{}
+	for _, item := range items {
+		facets.Kinds[item.Ref.Kind]++
+		facets.Groups[item.Group]++
+		facets.States[item.State]++
+		if item.Ref.Namespace != "" {
+			namespaces[item.Ref.Namespace] = struct{}{}
+		}
+		if item.Node != "" {
+			nodes[item.Node] = struct{}{}
+		}
+	}
+	for value := range namespaces {
+		facets.Namespaces = append(facets.Namespaces, value)
+	}
+	for value := range nodes {
+		facets.Nodes = append(facets.Nodes, value)
+	}
+	sort.Strings(facets.Namespaces)
+	sort.Strings(facets.Nodes)
+	return facets
+}
+
+func matches(item Item, query Query) bool {
+	if query.Kind != "" && !strings.EqualFold(item.Ref.Kind, query.Kind) {
+		return false
+	}
+	if query.Group != "" && !strings.EqualFold(item.Group, query.Group) {
+		return false
+	}
+	if query.Namespace != "" && item.Ref.Namespace != query.Namespace {
+		return false
+	}
+	if query.Node != "" && item.Node != query.Node {
+		return false
+	}
+	if query.State != "" && item.State != query.State {
+		return false
+	}
+	if query.Label != "" {
+		parts := strings.SplitN(query.Label, "=", 2)
+		value, ok := item.Labels[parts[0]]
+		if !ok || (len(parts) == 2 && value != parts[1]) {
+			return false
+		}
+	}
+	if query.Search != "" {
+		haystack := strings.ToLower(strings.Join([]string{
+			item.Ref.Kind, item.Ref.Namespace, item.Ref.Name, item.Node, item.IP, item.StateText,
+		}, " "))
+		if !strings.Contains(haystack, strings.ToLower(query.Search)) {
+			return false
+		}
+	}
+	return true
+}
+
+func resourceGroup(kind string) string {
+	switch kind {
+	case "Node", "Namespace":
+		return "cluster"
+	case "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet", "Pod", "Job", "CronJob", "HorizontalPodAutoscaler", "PodDisruptionBudget":
+		return "workloads"
+	case "Service", "EndpointSlice", "Ingress", "NetworkPolicy":
+		return "network"
+	case "PersistentVolumeClaim", "PersistentVolume", "StorageClass":
+		return "storage"
+	case "ConfigMap":
+		return "configuration"
+	case "Event":
+		return "events"
+	default:
+		return "other"
+	}
+}
+
+func severityRank(state string) int {
+	switch state {
+	case StateCritical:
+		return 0
+	case StateWarning:
+		return 1
+	case StateUnknown:
+		return 2
+	default:
+		return 3
+	}
+}
+
+func endpointCounts(service model.Resource, resources []model.Resource) (int, int) {
+	ready, total := 0, 0
+	for _, resource := range resources {
+		if resource.Ref.Kind != "EndpointSlice" || resource.Ref.Namespace != service.Ref.Namespace ||
+			resource.Labels["kubernetes.io/service-name"] != service.Ref.Name {
+			continue
+		}
+		sliceReady, sliceTotal := sliceEndpointCounts(rawMap(resource.Spec))
+		ready += sliceReady
+		total += sliceTotal
+	}
+	return ready, total
+}
+
+func sliceEndpointCounts(spec map[string]any) (int, int) {
+	ready, total := 0, 0
+	for _, endpoint := range nestedSlice(spec, "endpoints") {
+		total++
+		conditions := nestedMap(endpoint, "conditions")
+		value, exists := conditions["ready"]
+		if !exists || value == true {
+			ready++
+		}
+	}
+	return ready, total
+}
+
+func summarizeConditions(status map[string]any) (string, string, bool) {
+	conditions := nestedSlice(status, "conditions")
+	if len(conditions) == 0 {
+		return "", "", false
+	}
+	for _, condition := range conditions {
+		if stringValue(condition["status"]) == "False" {
+			return StateWarning, valueOr(stringValue(condition["reason"]), "Condition 未满足"), true
+		}
+	}
+	return StateHealthy, "条件正常", true
+}
+
+func rawMap(raw json.RawMessage) map[string]any {
+	value := map[string]any{}
+	_ = json.Unmarshal(raw, &value)
+	return value
+}
+
+func nestedStringMap(raw json.RawMessage, key string) map[string]string {
+	source := rawMap(raw)
+	input, _ := source[key].(map[string]any)
+	output := make(map[string]string, len(input))
+	for itemKey, value := range input {
+		output[itemKey] = stringValue(value)
+	}
+	return output
+}
+
+func nestedSlice(value map[string]any, keys ...string) []map[string]any {
+	current := any(value)
+	for _, key := range keys {
+		object, ok := current.(map[string]any)
+		if !ok {
+			return nil
+		}
+		current = object[key]
+	}
+	input, _ := current.([]any)
+	output := make([]map[string]any, 0, len(input))
+	for _, item := range input {
+		if object, ok := item.(map[string]any); ok {
+			output = append(output, object)
+		}
+	}
+	return output
+}
+
+func nestedMap(value map[string]any, keys ...string) map[string]any {
+	current := any(value)
+	for _, key := range keys {
+		object, ok := current.(map[string]any)
+		if !ok {
+			return nil
+		}
+		current = object[key]
+	}
+	output, _ := current.(map[string]any)
+	return output
+}
+
+func stringValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case json.Number:
+		return typed.String()
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	default:
+		return ""
+	}
+}
+
+func intValue(value any) int {
+	switch typed := value.(type) {
+	case float64:
+		return int(typed)
+	case int64:
+		return int(typed)
+	case json.Number:
+		number, _ := typed.Int64()
+		return int(number)
+	default:
+		return 0
+	}
+}
+
+func labelsMatch(selector, labels map[string]string) bool {
+	if len(selector) == 0 {
+		return false
+	}
+	for key, value := range selector {
+		if labels[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func nodeAddress(status map[string]any) string {
+	for _, address := range nestedSlice(status, "addresses") {
+		if stringValue(address["type"]) == "InternalIP" {
+			return stringValue(address["address"])
+		}
+	}
+	return ""
+}
+
+func valueOr(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}

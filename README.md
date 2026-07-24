@@ -109,6 +109,10 @@ The CLI calls the API; it does not contain a second diagnosis engine.
 
 ## Web console
 
+- Cluster panorama: auto-connected live inventory, resource-group/
+  namespace/state/node/label/text filters, structured health, ownership and
+  Service/EndpointSlice/Pod relations, related Events, and a sanitized raw
+  object inspector.
 - Overview: Incident and severity summary with explicit data-coverage wording.
 - Incident list: severity/status/namespace/text filters, sorting, and paging.
 - Incident detail: conclusion and impact first; steps, Evidence, topology,
@@ -120,6 +124,11 @@ The CLI calls the API; it does not contain a second diagnosis engine.
 Raw technical detail is secondary to user-facing language such as “Service
 currently has no healthy backend Pods.” Missing data is never rendered as “no
 problem found.”
+
+When running inside Kubernetes, the API automatically uses its ServiceAccount.
+When run locally, it falls back to the standard kubeconfig loading rules; set
+`KDIAG_KUBECONFIG` and `KDIAG_CLUSTER_NAME` to override them. The live
+List-Watch inventory currently covers 20 common built-in resource kinds.
 
 ## targetPort fault demo
 
@@ -178,9 +187,10 @@ NetworkPolicy. See [the security policy](SECURITY.md).
 
 ## Current limitations
 
-- The collector, topology, rule engine, repository, and API are implemented as
-  testable components but are not yet wired into one live-cluster controller
-  process.
+- The live inventory covers 20 common built-in kinds; arbitrary CRD instances
+  are not discovered automatically yet.
+- An “unknown” resource is visible but does not yet have a health classifier;
+  unknown never means healthy.
 - The network API currently requires a prepared snapshot; live snapshot
   construction from informer caches is planned.
 - Static NetworkPolicy reasoning cannot prove CNI dataplane behavior. KDiag
@@ -205,4 +215,3 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and the
 vulnerability reporting.
 
 Apache License 2.0 — see [LICENSE](LICENSE).
-

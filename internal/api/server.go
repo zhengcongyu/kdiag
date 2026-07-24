@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/zhengcongyu/kdiag/internal/diagnosis"
+	"github.com/zhengcongyu/kdiag/internal/inventory"
 	networkdiag "github.com/zhengcongyu/kdiag/internal/network"
 	"github.com/zhengcongyu/kdiag/internal/repository"
 	"github.com/zhengcongyu/kdiag/internal/rules"
@@ -33,16 +34,25 @@ type Server struct {
 	cancels    map[string]context.CancelFunc
 	requests   atomic.Uint64
 	diagnoses  atomic.Uint64
+	inventory  inventory.Reader
 }
 
 func New(repository repository.Repository, logger *slog.Logger) *Server {
+	return NewWithInventory(repository, logger, inventory.Disconnected("Kubernetes 数据源未配置"))
+}
+
+func NewWithInventory(repository repository.Repository, logger *slog.Logger, resourceInventory inventory.Reader) *Server {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	if resourceInventory == nil {
+		resourceInventory = inventory.Disconnected("Kubernetes 数据源未配置")
 	}
 	return &Server{
 		repository: repository, engine: diagnosis.New(rules.Catalog()),
 		network: networkdiag.NewAnalyzer(nil),
 		hub:     newEventHub(), logger: logger, cancels: map[string]context.CancelFunc{},
+		inventory: resourceInventory,
 	}
 }
 
@@ -52,6 +62,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/readiness", s.health)
 	mux.HandleFunc("GET /metrics", s.metrics)
 	mux.HandleFunc("GET /api/v1/clusters", s.clusters)
+	mux.HandleFunc("GET /api/v1/cluster/overview", s.clusterOverview)
+	mux.HandleFunc("GET /api/v1/inventory", s.inventoryList)
+	mux.HandleFunc("GET /api/v1/inventory/{uid}", s.inventoryItem)
 	mux.HandleFunc("GET /api/v1/incidents", s.incidents)
 	mux.HandleFunc("GET /api/v1/incidents/{id}", s.incident)
 	mux.HandleFunc("GET /api/v1/incidents/{id}/topology", s.incidentTopology)
@@ -110,7 +123,61 @@ func (s *Server) clusters(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusInternalServerError, "INTERNAL", "unable to list clusters")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	connection := s.inventory.Connection()
+	if connection.Status != "disconnected" {
+		items = append([]string{connection.Name}, items...)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": uniqueStrings(items), "connection": connection})
+}
+
+func (s *Server) clusterOverview(w http.ResponseWriter, _ *http.Request) {
+	result := s.inventory.List(inventory.Query{Limit: 1})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"connection": s.inventory.Connection(),
+		"total":      result.Total,
+		"facets":     result.Facets,
+		"observedAt": result.Observed,
+		"coverage": map[string]any{
+			"source":  "Kubernetes API Informer/List-Watch",
+			"secrets": false,
+			"message": "展示受支持的非敏感 Kubernetes 资源。未采集或未评估的数据会标记为未知，不会显示为健康。",
+		},
+	})
+}
+
+func (s *Server) inventoryList(w http.ResponseWriter, r *http.Request) {
+	for _, name := range []string{"kind", "group", "namespace", "node", "state", "label", "q"} {
+		if len(r.URL.Query().Get(name)) > 200 {
+			writeError(w, r, http.StatusBadRequest, "INVALID_ARGUMENT", name+" is too long")
+			return
+		}
+	}
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	result := s.inventory.List(inventory.Query{
+		Kind:      strings.TrimSpace(r.URL.Query().Get("kind")),
+		Group:     strings.TrimSpace(r.URL.Query().Get("group")),
+		Namespace: strings.TrimSpace(r.URL.Query().Get("namespace")),
+		Node:      strings.TrimSpace(r.URL.Query().Get("node")),
+		State:     strings.TrimSpace(r.URL.Query().Get("state")),
+		Label:     strings.TrimSpace(r.URL.Query().Get("label")),
+		Search:    strings.TrimSpace(r.URL.Query().Get("q")),
+		Offset:    offset, Limit: QueryInt(r, "limit", 50),
+	})
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) inventoryItem(w http.ResponseWriter, r *http.Request) {
+	uid := strings.TrimSpace(r.PathValue("uid"))
+	if uid == "" || len(uid) > 256 {
+		writeError(w, r, http.StatusBadRequest, "INVALID_ARGUMENT", "invalid resource UID")
+		return
+	}
+	item, err := s.inventory.Get(uid)
+	if err != nil {
+		writeError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
 }
 
 func (s *Server) incidents(w http.ResponseWriter, r *http.Request) {
@@ -432,4 +499,20 @@ func QueryInt(r *http.Request, name string, fallback int) int {
 		return fallback
 	}
 	return value
+}
+
+func uniqueStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }

@@ -6,16 +6,36 @@ metadata:
     {{- include "kdiag.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
-    resources: [namespaces, pods, nodes, services, events, persistentvolumeclaims]
+    resources:
+      - namespaces
+      - pods
+      - nodes
+      - services
+      - events
+      - configmaps
+      - persistentvolumeclaims
+      - persistentvolumes
     verbs: [get, list, watch]
   - apiGroups: [apps]
-    resources: [deployments, replicasets]
+    resources: [deployments, replicasets, statefulsets, daemonsets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
     verbs: [get, list, watch]
   - apiGroups: [discovery.k8s.io]
     resources: [endpointslices]
     verbs: [get, list, watch]
   - apiGroups: [networking.k8s.io]
-    resources: [networkpolicies]
+    resources: [networkpolicies, ingresses]
+    verbs: [get, list, watch]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get, list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
     verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -32,4 +52,3 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "kdiag.fullname" . }}
     namespace: {{ .Release.Namespace }}
-

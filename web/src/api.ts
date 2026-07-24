@@ -1,4 +1,6 @@
-import type {DiagnosisTask, Incident, ResourceRef} from "./types";
+import type {
+  ClusterOverview, DiagnosisTask, Incident, InventoryResource, InventoryResult, ResourceRef
+} from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -19,6 +21,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  clusterOverview: () => request<ClusterOverview>("/api/v1/cluster/overview"),
+  inventory: (filters: Record<string, string | number | undefined>) => {
+    const query = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== "") query.set(key, String(value));
+    });
+    return request<InventoryResult>(`/api/v1/inventory?${query.toString()}`);
+  },
+  inventoryItem: (uid: string) =>
+    request<InventoryResource>(`/api/v1/inventory/${encodeURIComponent(uid)}`),
   incidents: () => request<{items: Incident[]; total: number}>("/api/v1/incidents"),
   incident: (id: string) => request<Incident>(`/api/v1/incidents/${encodeURIComponent(id)}`),
   diagnose: (target: ResourceRef, observation: Record<string, unknown> = {}) =>

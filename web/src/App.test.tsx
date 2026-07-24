@@ -18,9 +18,10 @@ beforeEach(() => {
   })));
 });
 
-test("renders accessible empty overview", async () => {
+test("renders accessible cluster inventory and honest empty state", async () => {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
   render(<QueryClientProvider client={client}><MemoryRouter><App /></MemoryRouter></QueryClientProvider>);
-  expect(await screen.findByRole("heading", {name: "集群概览"})).toBeInTheDocument();
-  expect(await screen.findByText(/缺少采集数据时不会显示为/)).toBeInTheDocument();
+  expect(await screen.findByRole("heading", {name: "集群全景"})).toBeInTheDocument();
+  expect(await screen.findByText(/缺少数据不会被当作健康/)).toBeInTheDocument();
+  expect(screen.getByRole("textbox", {name: "搜索资源"})).toBeInTheDocument();
 });

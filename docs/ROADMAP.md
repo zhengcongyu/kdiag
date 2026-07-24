@@ -21,6 +21,9 @@ created until these gates pass.
 
 ## Beyond v0.1
 
+- ✅ Live-cluster controller — automatic in-cluster/kubeconfig connection,
+  informer-backed inventory API, resource relationships, cluster-wide filters,
+  detailed object inspector, and an iOS-inspired resource workspace.
 - Multi-cluster credentials via external secret managers.
 - CNI-specific flow evidence adapters.
 - Signed rule bundles and rule authoring SDK.
