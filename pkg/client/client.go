@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/zhengcongyu/kdiag/internal/network"
-	"github.com/zhengcongyu/kdiag/internal/rules"
 	"github.com/zhengcongyu/kdiag/pkg/model"
 )
 
@@ -37,9 +36,9 @@ func (c *Client) Health(ctx context.Context) error {
 	return c.do(ctx, http.MethodGet, "/api/v1/health", nil, &value)
 }
 
-func (c *Client) Diagnose(ctx context.Context, target model.ResourceRef, observation rules.Observation) (model.DiagnosisTask, error) {
+func (c *Client) Diagnose(ctx context.Context, target model.ResourceRef) (model.DiagnosisTask, error) {
 	var task model.DiagnosisTask
-	err := c.do(ctx, http.MethodPost, "/api/v1/diagnoses", map[string]any{"target": target, "observation": observation}, &task)
+	err := c.do(ctx, http.MethodPost, "/api/v1/diagnoses", map[string]any{"target": target}, &task)
 	return task, err
 }
 
@@ -48,7 +47,7 @@ func (c *Client) NetworkDiagnose(ctx context.Context, request network.Request) (
 	body := map[string]any{
 		"cluster": request.Cluster, "namespace": request.Namespace, "source": request.Source,
 		"service": request.Service, "port": request.Port, "protocol": request.Protocol,
-		"activeProbe": request.ActiveProbe, "snapshot": network.Snapshot{},
+		"activeProbe": request.ActiveProbe,
 	}
 	err := c.do(ctx, http.MethodPost, "/api/v1/network-diagnoses", body, &task)
 	return task, err

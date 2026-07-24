@@ -3,6 +3,7 @@ package api
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -15,7 +16,6 @@ import (
 	"github.com/zhengcongyu/kdiag/internal/collector"
 	"github.com/zhengcongyu/kdiag/internal/inventory"
 	"github.com/zhengcongyu/kdiag/internal/repository"
-	"github.com/zhengcongyu/kdiag/internal/rules"
 	"github.com/zhengcongyu/kdiag/pkg/model"
 )
 
@@ -51,12 +51,23 @@ func TestHealthAndValidation(t *testing.T) {
 }
 
 func TestDiagnosisSSE(t *testing.T) {
-	server, _ := testServer()
+	repo := repository.NewMemory()
+	store := inventory.NewStore(inventory.Connection{Name: "demo", Status: "connected"})
+	store.Apply(collector.Change{Type: collector.Added, Resource: model.Resource{
+		Ref: model.ResourceRef{Cluster: "demo", UID: "p1", Kind: "Pod", Namespace: "default", Name: "payment"},
+		Status: json.RawMessage(`{
+			"phase":"Running",
+			"conditions":[{"type":"Ready","status":"False"}],
+			"containerStatuses":[{"ready":false,"state":{"waiting":{"reason":"CrashLoopBackOff"}}}]
+		}`),
+		Observed: time.Now().UTC(),
+	}})
+	server := httptest.NewServer(NewWithInventory(
+		repo, slog.New(slog.NewTextHandler(io.Discard, nil)), store,
+	).Handler())
 	defer server.Close()
-	reason := "CrashLoopBackOff"
 	request := diagnosisRequest{
-		Target:      model.ResourceRef{Cluster: "demo", UID: "p1", Kind: "Pod", Namespace: "default", Name: "payment"},
-		Observation: rules.Observation{ContainerWaitingReason: &reason},
+		Target: model.ResourceRef{Cluster: "demo", UID: "p1", Kind: "Pod", Namespace: "default", Name: "payment"},
 	}
 	raw, _ := json.Marshal(request)
 	response, err := http.Post(server.URL+"/api/v1/diagnoses", "application/json", bytes.NewReader(raw))
@@ -89,6 +100,34 @@ func TestDiagnosisSSE(t *testing.T) {
 	}
 	if len(events) == 0 || events[0] != "task_started" || events[len(events)-1] != "diagnosis_completed" {
 		t.Fatalf("unexpected SSE events: %#v", events)
+	}
+	var completed model.DiagnosisTask
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		completed, _ = repo.GetTask(context.Background(), task.ID)
+		if completed.Report != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if completed.Report == nil || completed.Report.Verdict != model.VerdictConfirmed {
+		t.Fatalf("diagnosis report was not persisted: %#v", completed)
+	}
+	list, err := http.Get(server.URL + "/api/v1/diagnoses?verdict=CONFIRMED_ISSUE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = list.Body.Close() }()
+	if list.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected task list status: %s", list.Status)
+	}
+	topology, err := http.Get(server.URL + "/api/v1/topology?uid=p1&depth=2&direction=both")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = topology.Body.Close() }()
+	if topology.StatusCode != http.StatusOK {
+		t.Fatalf("unexpected topology status: %s", topology.Status)
 	}
 }
 

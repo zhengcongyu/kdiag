@@ -25,16 +25,17 @@ import (
 )
 
 type Server struct {
-	repository repository.Repository
-	engine     *diagnosis.Engine
-	network    *networkdiag.Analyzer
-	hub        *eventHub
-	logger     *slog.Logger
-	mu         sync.Mutex
-	cancels    map[string]context.CancelFunc
-	requests   atomic.Uint64
-	diagnoses  atomic.Uint64
-	inventory  inventory.Reader
+	repository   repository.Repository
+	engine       *diagnosis.Engine
+	network      *networkdiag.Analyzer
+	hub          *eventHub
+	logger       *slog.Logger
+	mu           sync.Mutex
+	cancels      map[string]context.CancelFunc
+	requests     atomic.Uint64
+	diagnoses    atomic.Uint64
+	inventory    inventory.Reader
+	observations diagnosis.ObservationProvider
 }
 
 func New(repository repository.Repository, logger *slog.Logger) *Server {
@@ -52,7 +53,7 @@ func NewWithInventory(repository repository.Repository, logger *slog.Logger, res
 		repository: repository, engine: diagnosis.New(rules.Catalog()),
 		network: networkdiag.NewAnalyzer(nil),
 		hub:     newEventHub(), logger: logger, cancels: map[string]context.CancelFunc{},
-		inventory: resourceInventory,
+		inventory: resourceInventory, observations: diagnosis.NewObservationProvider(resourceInventory),
 	}
 }
 
@@ -70,10 +71,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/incidents/{id}/topology", s.incidentTopology)
 	mux.HandleFunc("GET /api/v1/incidents/{id}/timeline", s.incidentTimeline)
 	mux.HandleFunc("POST /api/v1/diagnoses", s.createDiagnosis)
+	mux.HandleFunc("GET /api/v1/diagnoses", s.listDiagnoses)
 	mux.HandleFunc("GET /api/v1/diagnoses/{id}", s.getDiagnosis)
 	mux.HandleFunc("GET /api/v1/diagnoses/{id}/events", s.diagnosisEvents)
 	mux.HandleFunc("DELETE /api/v1/diagnoses/{id}", s.cancelDiagnosis)
 	mux.HandleFunc("POST /api/v1/network-diagnoses", s.createNetworkDiagnosis)
+	mux.HandleFunc("GET /api/v1/topology", s.topology)
 	mux.HandleFunc("GET /api/v1/resources/search", s.searchResources)
 	mux.HandleFunc("GET /api/v1/resources/{kind}/{namespace}/{name}", s.resource)
 	mux.HandleFunc("POST /api/v1/replays/{incidentId}", s.replay)
@@ -235,9 +238,21 @@ func (s *Server) createDiagnosis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if request.Target.UID == "" {
-		request.Target.UID = strings.ToLower(request.Target.Kind + ":" + request.Target.Namespace + ":" + request.Target.Name)
+		result := s.inventory.List(inventory.Query{
+			Kind: request.Target.Kind, Namespace: request.Target.Namespace,
+			Search: request.Target.Name, Limit: 200,
+		})
+		for _, item := range result.Items {
+			if item.Ref.Name == request.Target.Name {
+				request.Target = item.Ref
+				break
+			}
+		}
+		if request.Target.UID == "" {
+			writeError(w, r, http.StatusNotFound, "NOT_FOUND", "target resource was not found in the live Kubernetes inventory")
+			return
+		}
 	}
-	request.Observation.Resource = request.Target
 	task := model.DiagnosisTask{
 		ID: newID(), Kind: "resource", Target: request.Target,
 		Status: model.StatusPending, CreatedAt: time.Now().UTC(),
@@ -260,10 +275,26 @@ func (s *Server) createDiagnosis(w http.ResponseWriter, r *http.Request) {
 			s.mu.Unlock()
 			cancel()
 		}()
-		err := s.engine.Run(ctx, &task, request.Observation, taskSink{hub: s.hub, taskID: task.ID})
+		observation, observationErr := s.observations.Build(request.Target)
+		if observationErr != nil {
+			task.Status, task.Error = model.StatusFailed, "无法从实时 Kubernetes 缓存读取目标资源"
+			s.hub.publish(task.ID, diagnosis.Event{Type: "diagnosis_failed", Data: task.Error})
+			persistCtx, persistCancel := context.WithTimeout(baseCtx, 5*time.Second)
+			defer persistCancel()
+			_ = s.repository.SaveTask(persistCtx, task)
+			return
+		}
+		err := s.engine.Run(ctx, &task, observation, taskSink{hub: s.hub, taskID: task.ID})
 		if err != nil && !errors.Is(err, context.Canceled) {
 			task.Status, task.Error = model.StatusFailed, "diagnosis execution failed"
 			s.hub.publish(task.ID, diagnosis.Event{Type: "diagnosis_failed", Data: task.Error})
+		}
+		if err == nil {
+			topology, _ := s.observations.Topology(task.Target.UID, 2, "both")
+			task.Report = diagnosis.BuildReport(&task, topology)
+			if task.Report.Verdict == model.VerdictConfirmed {
+				_ = s.saveTaskIncident(baseCtx, task)
+			}
 		}
 		persistCtx, persistCancel := context.WithTimeout(baseCtx, 5*time.Second)
 		defer persistCancel()
@@ -313,7 +344,13 @@ func (s *Server) createNetworkDiagnosis(w http.ResponseWriter, r *http.Request) 
 		started := time.Now().UTC()
 		task.Status, task.StartedAt = model.StatusRunning, &started
 		s.hub.publish(task.ID, diagnosis.Event{Type: "task_started", Data: task})
-		result := s.network.Analyze(ctx, request.Request, request.Snapshot)
+		snapshot, snapshotErr := s.observations.BuildNetwork(request.Request)
+		if snapshotErr != nil {
+			task.Status, task.Error = model.StatusFailed, "无法从实时 Kubernetes 缓存构建网络快照"
+			s.hub.publish(task.ID, diagnosis.Event{Type: "diagnosis_failed", Data: task.Error})
+			return
+		}
+		result := s.network.Analyze(ctx, request.Request, snapshot)
 		for _, networkStep := range result.Steps {
 			stepStarted := time.Now().UTC()
 			step := model.DiagnosisStep{
@@ -329,6 +366,16 @@ func (s *Server) createNetworkDiagnosis(w http.ResponseWriter, r *http.Request) 
 				step.Status = model.StatusNeedsMoreEvidence
 			} else {
 				step.Status = model.StatusCompleted
+			}
+			switch networkStep.Status {
+			case networkdiag.Passed:
+				step.Outcome = model.CheckPassed
+			case networkdiag.Failed:
+				step.Outcome = model.CheckFailed
+			case networkdiag.Missing:
+				step.Outcome = model.CheckUnknown
+			case networkdiag.Skipped:
+				step.Outcome = model.CheckSkipped
 			}
 			task.Steps = append(task.Steps, step)
 			s.hub.publish(task.ID, diagnosis.Event{Type: "step_completed", Data: step})
@@ -350,11 +397,16 @@ func (s *Server) createNetworkDiagnosis(w http.ResponseWriter, r *http.Request) 
 		}
 		task.Hypotheses = []model.Hypothesis{hypothesis}
 		s.hub.publish(task.ID, diagnosis.Event{Type: "hypothesis_updated", Data: hypothesis})
+		topology, _ := s.observations.Topology(task.Target.UID, 2, "both")
+		task.Report = diagnosis.BuildNetworkReport(&task, result, topology)
 		finished := time.Now().UTC()
 		task.Status, task.FinishedAt = model.StatusCompleted, &finished
 		persistCtx, persistCancel := context.WithTimeout(baseCtx, 5*time.Second)
 		defer persistCancel()
 		_ = s.repository.SaveTask(persistCtx, task)
+		if task.Report.Verdict == model.VerdictConfirmed {
+			_ = s.saveTaskIncident(baseCtx, task)
+		}
 		s.hub.publish(task.ID, diagnosis.Event{Type: "diagnosis_completed", Data: task})
 	}()
 	writeJSON(w, http.StatusAccepted, acceptedTask)
@@ -367,6 +419,87 @@ func (s *Server) getDiagnosis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
+}
+
+func (s *Server) saveTaskIncident(ctx context.Context, task model.DiagnosisTask) error {
+	if task.Report == nil {
+		return nil
+	}
+	now := time.Now().UTC()
+	started := task.CreatedAt
+	if task.StartedAt != nil {
+		started = *task.StartedAt
+	}
+	incident := model.Incident{
+		ID: task.ID, Cluster: task.Target.Cluster, Title: task.Report.Headline,
+		Summary: task.Report.Summary, Severity: "P1", Status: "open",
+		Namespace: task.Target.Namespace, StartedAt: started, UpdatedAt: now,
+		ResourceUIDs: []string{task.Target.UID}, Evidence: task.Evidence,
+		Hypotheses: task.Hypotheses, EngineVersion: diagnosis.EngineVersion,
+		Topology: task.Report.Topology, DiagnosisSteps: task.Steps,
+		Timeline: []model.TimelineEvent{{
+			ID: task.ID + "/created", IncidentID: task.ID, At: now,
+			Type: "diagnosis_confirmed", Summary: task.Report.Headline, Resource: &task.Target,
+		}},
+	}
+	if item, err := s.inventory.Get(task.Target.UID); err == nil {
+		incident.ResourceState = []model.Resource{item.Resource}
+	}
+	saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return s.repository.SaveIncident(saveCtx, incident)
+}
+
+func (s *Server) listDiagnoses(w http.ResponseWriter, r *http.Request) {
+	items, err := s.repository.ListTasks(r.Context())
+	if err != nil {
+		writeError(w, r, http.StatusInternalServerError, "INTERNAL", "unable to list diagnoses")
+		return
+	}
+	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
+	verdict := strings.TrimSpace(r.URL.Query().Get("verdict"))
+	namespace := strings.TrimSpace(r.URL.Query().Get("namespace"))
+	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	filtered := make([]model.DiagnosisTask, 0, len(items))
+	for _, item := range items {
+		if kind != "" && item.Kind != kind {
+			continue
+		}
+		if namespace != "" && item.Target.Namespace != namespace {
+			continue
+		}
+		if verdict != "" && (item.Report == nil || string(item.Report.Verdict) != verdict) {
+			continue
+		}
+		if query != "" && !strings.Contains(strings.ToLower(item.Target.Kind+"/"+item.Target.Name), query) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": filtered, "total": len(filtered)})
+}
+
+func (s *Server) topology(w http.ResponseWriter, r *http.Request) {
+	uid := strings.TrimSpace(r.URL.Query().Get("uid"))
+	if uid == "" || len(uid) > 256 {
+		writeError(w, r, http.StatusBadRequest, "INVALID_ARGUMENT", "uid is required")
+		return
+	}
+	depth := QueryInt(r, "depth", 2)
+	direction := strings.TrimSpace(r.URL.Query().Get("direction"))
+	if direction == "" {
+		direction = "both"
+	}
+	if direction != "both" && direction != "upstream" && direction != "downstream" {
+		writeError(w, r, http.StatusBadRequest, "INVALID_ARGUMENT", "direction must be both, upstream, or downstream")
+		return
+	}
+	result, err := s.observations.Topology(uid, depth, direction)
+	if err != nil {
+		writeError(w, r, http.StatusNotFound, "NOT_FOUND", "resource not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) diagnosisEvents(w http.ResponseWriter, r *http.Request) {
@@ -382,7 +515,8 @@ func (s *Server) diagnosisEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
-	ch, unsubscribe := s.hub.subscribe(r.PathValue("id"))
+	after, _ := strconv.ParseInt(r.Header.Get("Last-Event-ID"), 10, 64)
+	ch, unsubscribe := s.hub.subscribe(r.PathValue("id"), after)
 	defer unsubscribe()
 	for {
 		select {
@@ -393,7 +527,7 @@ func (s *Server) diagnosisEvents(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			raw, _ := json.Marshal(event.Data)
-			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Type, raw)
+			_, _ = fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", event.Sequence, event.Type, raw)
 			flusher.Flush()
 			if event.Type == "diagnosis_completed" || event.Type == "diagnosis_failed" || event.Type == "task_cancelled" {
 				return

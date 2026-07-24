@@ -114,6 +114,27 @@ func (p *Postgres) GetTask(ctx context.Context, id string) (model.DiagnosisTask,
 	return item, json.Unmarshal(raw, &item)
 }
 
+func (p *Postgres) ListTasks(ctx context.Context) ([]model.DiagnosisTask, error) {
+	rows, err := p.pool.Query(ctx, `SELECT result FROM diagnosis_tasks ORDER BY created_at DESC LIMIT 200`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []model.DiagnosisTask{}
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var item model.DiagnosisTask
+		if err := json.Unmarshal(raw, &item); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (p *Postgres) SearchResources(ctx context.Context, query string) ([]model.Resource, error) {
 	rows, err := p.pool.Query(ctx, `SELECT snapshot FROM resource_snapshots
 		WHERE name ILIKE '%' || $1 || '%' OR kind ILIKE '%' || $1 || '%'

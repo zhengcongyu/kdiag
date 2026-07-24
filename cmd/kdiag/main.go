@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/zhengcongyu/kdiag/internal/network"
-	"github.com/zhengcongyu/kdiag/internal/rules"
 	kdiagclient "github.com/zhengcongyu/kdiag/pkg/client"
 	"github.com/zhengcongyu/kdiag/pkg/model"
 )
@@ -112,7 +111,7 @@ func why(args []string) error {
 	if err != nil {
 		return err
 	}
-	task, err := client.Diagnose(ctx, target, rules.Observation{})
+	task, err := client.Diagnose(ctx, target)
 	if err != nil {
 		return err
 	}
@@ -214,10 +213,17 @@ func printTask(task model.DiagnosisTask, output string) error {
 		return encoder.Encode(task)
 	}
 	writer := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintf(writer, "TASK\tSTATUS\tTARGET\n%s\t%s\t%s/%s\n\n", task.ID, task.Status, task.Target.Kind, task.Target.Name)
-	_, _ = fmt.Fprintln(writer, "STEP\tSTATUS\tSUMMARY")
+	_, _ = fmt.Fprintf(writer, "任务\t状态\t目标\n%s\t%s\t%s/%s\n\n", task.ID, task.Status, task.Target.Kind, task.Target.Name)
+	if task.Report != nil {
+		_, _ = fmt.Fprintf(writer, "结论\t%s\n影响\t%s\n定位\t%s\n根因\t%s\n\n",
+			task.Report.Headline, task.Report.Impact, task.Report.BlockedAt, task.Report.RootCause)
+		_, _ = fmt.Fprintf(writer, "已确认问题\t%d\n疑似问题\t%d\n正常检查\t%d\n未验证\t%d\n\n",
+			len(task.Report.ConfirmedIssues), len(task.Report.SuspectedIssues),
+			len(task.Report.HealthyChecks), len(task.Report.UnknownChecks))
+	}
+	_, _ = fmt.Fprintln(writer, "检查步骤\t结果\t摘要")
 	for _, step := range task.Steps {
-		_, _ = fmt.Fprintf(writer, "%s\t%s\t%s\n", step.Name, step.Status, step.Summary)
+		_, _ = fmt.Fprintf(writer, "%s\t%s\t%s\n", step.Name, step.Outcome, step.Summary)
 	}
 	_ = writer.Flush()
 	missing := 0
@@ -227,7 +233,7 @@ func printTask(task model.DiagnosisTask, output string) error {
 		}
 	}
 	if missing > 0 {
-		fmt.Printf("\nCoverage: %d required evidence item(s) are missing; this is not a healthy result.\n", missing)
+		fmt.Printf("\n能力覆盖：仍缺少 %d 项必要证据；这不能解释为资源正常。\n", missing)
 	}
 	return nil
 }

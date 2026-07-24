@@ -13,8 +13,9 @@ import (
 const EngineVersion = "dag-engine/v1"
 
 type Event struct {
-	Type string `json:"type"`
-	Data any    `json:"data"`
+	Sequence int64  `json:"sequence,omitempty"`
+	Type     string `json:"type"`
+	Data     any    `json:"data"`
 }
 
 type Sink interface {
@@ -81,6 +82,14 @@ func (e *Engine) Run(ctx context.Context, task *model.DiagnosisTask, observation
 			}
 			finished := time.Now().UTC()
 			step.Status, step.CompletedAt, step.Summary = result.Status, &finished, result.Evidence[0].Summary
+			switch result.Evidence[0].Role {
+			case model.EvidenceSupporting:
+				step.Outcome = model.CheckFailed
+			case model.EvidenceContradicting:
+				step.Outcome = model.CheckPassed
+			default:
+				step.Outcome = model.CheckUnknown
+			}
 			task.Steps = append(task.Steps, step)
 			sink.Publish(Event{Type: "step_completed", Data: step})
 			completed[node.Rule.ID()] = true

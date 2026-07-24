@@ -33,8 +33,14 @@ func TestTargetPortMismatchIsPreciselyLocated(t *testing.T) {
 	if result.RootCause != "target_port_mismatch" {
 		t.Fatalf("unexpected result: %#v", result)
 	}
-	if result.Steps[len(result.Steps)-1].ID != "target-port" {
-		t.Fatalf("diagnosis did not stop at targetPort: %#v", result.Steps)
+	failedAtTargetPort := false
+	skippedAfterFailure := false
+	for _, step := range result.Steps {
+		failedAtTargetPort = failedAtTargetPort || (step.ID == "target-port" && step.Status == Failed)
+		skippedAfterFailure = skippedAfterFailure || (step.ID == "network-policy" && step.Status == Skipped)
+	}
+	if !failedAtTargetPort || !skippedAfterFailure {
+		t.Fatalf("diagnosis did not mark targetPort as the blocking point: %#v", result.Steps)
 	}
 }
 

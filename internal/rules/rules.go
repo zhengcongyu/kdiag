@@ -106,38 +106,38 @@ func Catalog() []Rule {
 		}
 	}
 	rules := []Rule{
-		newRule("KDIAG-POD-CRASHLOOP", "Container is repeatedly crashing", []string{"Pod"}, waiting("CrashLoopBackOff")),
+		newRule("KDIAG-POD-CRASHLOOP", "容器正在反复崩溃并重启", []string{"Pod"}, waiting("CrashLoopBackOff")),
 		// OOM requires the structured terminated reason; exit code 137 alone is intentionally ignored.
-		newRule("KDIAG-POD-OOMKILLED", "Container was terminated by the OOM killer", []string{"Pod"}, func(o Observation) (bool, bool, bool, string) {
+		newRule("KDIAG-POD-OOMKILLED", "容器被内存不足保护机制终止", []string{"Pod"}, func(o Observation) (bool, bool, bool, string) {
 			if o.ContainerTerminatedReason == nil {
 				return false, false, false, ""
 			}
 			match := *o.ContainerTerminatedReason == "OOMKilled"
 			return match, !match, true, "last container termination reason is " + *o.ContainerTerminatedReason
 		}),
-		newRule("KDIAG-POD-IMAGEPULLBACKOFF", "Image pull is backing off", []string{"Pod"}, waiting("ImagePullBackOff")),
-		newRule("KDIAG-POD-ERRIMAGEPULL", "Container image could not be pulled", []string{"Pod"}, waiting("ErrImagePull")),
-		newRule("KDIAG-POD-CONFIG", "Container configuration could not be created", []string{"Pod"}, waiting("CreateContainerConfigError")),
-		newRule("KDIAG-POD-READINESS", "Readiness probe is failing", []string{"Pod"}, boolean(func(o Observation) *bool { return o.ReadinessProbeFailed }, true, "structured readiness check reports failure")),
-		newRule("KDIAG-SVC-SELECTOR", "Service selector matches no Pods", []string{"Service"}, boolean(func(o Observation) *bool { return o.SelectorMatches }, false, "Service selector match result was evaluated")),
-		newRule("KDIAG-SVC-ENDPOINT", "Service has no Ready Endpoint", []string{"Service"}, func(o Observation) (bool, bool, bool, string) {
+		newRule("KDIAG-POD-IMAGEPULLBACKOFF", "容器镜像拉取持续退避", []string{"Pod"}, waiting("ImagePullBackOff")),
+		newRule("KDIAG-POD-ERRIMAGEPULL", "容器镜像无法拉取", []string{"Pod"}, waiting("ErrImagePull")),
+		newRule("KDIAG-POD-CONFIG", "容器配置无法创建", []string{"Pod"}, waiting("CreateContainerConfigError")),
+		newRule("KDIAG-POD-READINESS", "就绪探针正在失败", []string{"Pod"}, boolean(func(o Observation) *bool { return o.ReadinessProbeFailed }, true, "结构化就绪状态和探针事件显示检查失败")),
+		newRule("KDIAG-SVC-SELECTOR", "Service selector 没有匹配任何 Pod", []string{"Service"}, boolean(func(o Observation) *bool { return o.SelectorMatches }, false, "已计算 Service selector 与 Pod 标签的匹配结果")),
+		newRule("KDIAG-SVC-ENDPOINT", "Service 没有 Ready Endpoint", []string{"Service"}, func(o Observation) (bool, bool, bool, string) {
 			if o.ReadyEndpoints == nil {
 				return false, false, false, ""
 			}
 			match := *o.ReadyEndpoints == 0
 			return match, !match, true, fmt.Sprintf("EndpointSlice Ready endpoint count is %d", *o.ReadyEndpoints)
 		}),
-		newRule("KDIAG-SVC-TARGETPORT", "Service targetPort does not match a backend container port", []string{"Service"}, boolean(func(o Observation) *bool { return o.TargetPortMatches }, false, "resolved targetPort was compared with backend container ports")),
-		newRule("KDIAG-SCHED-RESOURCES", "Pod cannot be scheduled because resources are insufficient", []string{"Pod"}, boolean(func(o Observation) *bool { return o.InsufficientResources }, true, "scheduler condition reports insufficient resources")),
-		newRule("KDIAG-SCHED-TAINT", "Pod tolerations do not match node taints", []string{"Pod"}, boolean(func(o Observation) *bool { return o.TaintMismatch }, true, "taints and tolerations were compared structurally")),
-		newRule("KDIAG-PVC-PENDING", "PersistentVolumeClaim is Pending", []string{"PersistentVolumeClaim"}, func(o Observation) (bool, bool, bool, string) {
+		newRule("KDIAG-SVC-TARGETPORT", "Service targetPort 与后端容器端口不一致", []string{"Service"}, boolean(func(o Observation) *bool { return o.TargetPortMatches }, false, "已将 targetPort 与后端 Pod 声明端口逐一比较")),
+		newRule("KDIAG-SCHED-RESOURCES", "Pod 因资源不足无法调度", []string{"Pod"}, boolean(func(o Observation) *bool { return o.InsufficientResources }, true, "PodScheduled Condition 显示调度资源不足")),
+		newRule("KDIAG-SCHED-TAINT", "Pod toleration 与节点 taint 不匹配", []string{"Pod"}, boolean(func(o Observation) *bool { return o.TaintMismatch }, true, "调度 Condition 显示 taint/toleration 不匹配")),
+		newRule("KDIAG-PVC-PENDING", "PersistentVolumeClaim 一直处于 Pending", []string{"PersistentVolumeClaim"}, func(o Observation) (bool, bool, bool, string) {
 			if o.PVCPhase == nil {
 				return false, false, false, ""
 			}
 			match := strings.EqualFold(*o.PVCPhase, "Pending")
 			return match, !match, true, "PVC phase is " + *o.PVCPhase
 		}),
-		newRule("KDIAG-NODE-NOTREADY", "Node is NotReady", []string{"Node"}, boolean(func(o Observation) *bool { return o.NodeReady }, false, "Node Ready condition was evaluated")),
+		newRule("KDIAG-NODE-NOTREADY", "节点当前未就绪", []string{"Node"}, boolean(func(o Observation) *bool { return o.NodeReady }, false, "已检查 Node Ready Condition")),
 	}
 	return rules
 }
@@ -145,7 +145,7 @@ func Catalog() []Rule {
 func newRule(id, title string, kinds []string, check predicate) Rule {
 	return deterministicRule{
 		id: id, title: title, kinds: kinds, check: check, source: "kubernetes-structured-status",
-		remediation:  "Inspect the referenced workload configuration and apply a reviewed change; KDiag never mutates production resources.",
-		verification: "Re-run this rule and confirm the structured status is healthy and dependent endpoints recover.",
+		remediation:  "检查报告中的结构化证据并审查建议的 Manifest 变更；KDiag 不会自动修改生产资源。",
+		verification: "修复后重新运行诊断，确认结构化状态恢复，并验证下游 Endpoint 和请求路径。",
 	}
 }

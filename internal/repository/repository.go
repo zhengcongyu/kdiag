@@ -18,6 +18,7 @@ type Repository interface {
 	SaveIncident(context.Context, model.Incident) error
 	SaveTask(context.Context, model.DiagnosisTask) error
 	GetTask(context.Context, string) (model.DiagnosisTask, error)
+	ListTasks(context.Context) ([]model.DiagnosisTask, error)
 	SearchResources(context.Context, string) ([]model.Resource, error)
 	GetResource(context.Context, string, string, string) (model.Resource, error)
 }
@@ -86,6 +87,17 @@ func (m *Memory) GetTask(_ context.Context, id string) (model.DiagnosisTask, err
 		return model.DiagnosisTask{}, ErrNotFound
 	}
 	return item, nil
+}
+
+func (m *Memory) ListTasks(context.Context) ([]model.DiagnosisTask, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	items := make([]model.DiagnosisTask, 0, len(m.tasks))
+	for _, item := range m.tasks {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
+	return items, nil
 }
 
 func (m *Memory) PutResource(item model.Resource) {

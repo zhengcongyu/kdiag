@@ -97,6 +97,61 @@ const (
 	StatusNeedsMoreEvidence DiagnosisStatus = "NEEDS_MORE_EVIDENCE"
 )
 
+type CheckOutcome string
+
+const (
+	CheckPassed    CheckOutcome = "PASSED"
+	CheckFailed    CheckOutcome = "FAILED"
+	CheckSuspected CheckOutcome = "SUSPECTED"
+	CheckUnknown   CheckOutcome = "UNKNOWN"
+	CheckSkipped   CheckOutcome = "SKIPPED"
+)
+
+type DiagnosisVerdict string
+
+const (
+	VerdictConfirmed    DiagnosisVerdict = "CONFIRMED_ISSUE"
+	VerdictSuspected    DiagnosisVerdict = "SUSPECTED_ISSUE"
+	VerdictNoIssue      DiagnosisVerdict = "NO_ISSUE_FOUND"
+	VerdictInconclusive DiagnosisVerdict = "INCONCLUSIVE"
+)
+
+type DiagnosticIssue struct {
+	Code       string       `json:"code"`
+	Title      string       `json:"title"`
+	Summary    string       `json:"summary"`
+	Outcome    CheckOutcome `json:"outcome"`
+	Confidence float64      `json:"confidence"`
+	Resource   *ResourceRef `json:"resource,omitempty"`
+	Evidence   []string     `json:"evidence"`
+}
+
+type CoverageSummary struct {
+	Checked      int      `json:"checked"`
+	Total        int      `json:"total"`
+	Capabilities []string `json:"capabilities"`
+	Limitations  []string `json:"limitations"`
+}
+
+type DiagnosisReport struct {
+	Verdict           DiagnosisVerdict  `json:"verdict"`
+	Headline          string            `json:"headline"`
+	Summary           string            `json:"summary"`
+	Impact            string            `json:"impact"`
+	BlockedAt         string            `json:"blockedAt,omitempty"`
+	RootCause         string            `json:"rootCause,omitempty"`
+	ConfirmedIssues   []DiagnosticIssue `json:"confirmedIssues"`
+	SuspectedIssues   []DiagnosticIssue `json:"suspectedIssues"`
+	HealthyChecks     []DiagnosisStep   `json:"healthyChecks"`
+	UnknownChecks     []DiagnosisStep   `json:"unknownChecks"`
+	AffectedResources []ResourceRef     `json:"affectedResources"`
+	Coverage          CoverageSummary   `json:"coverage"`
+	Remediation       []string          `json:"remediation"`
+	Verification      []string          `json:"verification"`
+	Topology          GraphSnapshot     `json:"topology"`
+	GeneratedAt       time.Time         `json:"generatedAt"`
+}
+
 type Hypothesis struct {
 	ID                    string          `json:"id"`
 	RuleID                string          `json:"ruleId"`
@@ -137,27 +192,30 @@ type Incident struct {
 }
 
 type DiagnosisTask struct {
-	ID         string          `json:"id"`
-	Kind       string          `json:"kind"`
-	Target     ResourceRef     `json:"target"`
-	Status     DiagnosisStatus `json:"status"`
-	CreatedAt  time.Time       `json:"createdAt"`
-	StartedAt  *time.Time      `json:"startedAt,omitempty"`
-	FinishedAt *time.Time      `json:"finishedAt,omitempty"`
-	Steps      []DiagnosisStep `json:"steps"`
-	Evidence   []Evidence      `json:"evidence"`
-	Hypotheses []Hypothesis    `json:"hypotheses"`
-	Error      string          `json:"error,omitempty"`
+	ID         string           `json:"id"`
+	Kind       string           `json:"kind"`
+	Target     ResourceRef      `json:"target"`
+	Status     DiagnosisStatus  `json:"status"`
+	CreatedAt  time.Time        `json:"createdAt"`
+	StartedAt  *time.Time       `json:"startedAt,omitempty"`
+	FinishedAt *time.Time       `json:"finishedAt,omitempty"`
+	Steps      []DiagnosisStep  `json:"steps"`
+	Evidence   []Evidence       `json:"evidence"`
+	Hypotheses []Hypothesis     `json:"hypotheses"`
+	Report     *DiagnosisReport `json:"report,omitempty"`
+	Error      string           `json:"error,omitempty"`
 }
 
 type DiagnosisStep struct {
-	ID          string          `json:"id"`
-	RuleID      string          `json:"ruleId"`
-	Name        string          `json:"name"`
-	Status      DiagnosisStatus `json:"status"`
-	StartedAt   *time.Time      `json:"startedAt,omitempty"`
-	CompletedAt *time.Time      `json:"completedAt,omitempty"`
-	Summary     string          `json:"summary,omitempty"`
+	ID              string          `json:"id"`
+	RuleID          string          `json:"ruleId"`
+	Name            string          `json:"name"`
+	Status          DiagnosisStatus `json:"status"`
+	Outcome         CheckOutcome    `json:"outcome,omitempty"`
+	StartedAt       *time.Time      `json:"startedAt,omitempty"`
+	CompletedAt     *time.Time      `json:"completedAt,omitempty"`
+	Summary         string          `json:"summary,omitempty"`
+	TechnicalDetail string          `json:"technicalDetail,omitempty"`
 }
 
 type TimelineEvent struct {
@@ -176,6 +234,15 @@ type GraphEdge struct {
 }
 
 type GraphSnapshot struct {
-	Nodes []ResourceRef `json:"nodes"`
-	Edges []GraphEdge   `json:"edges"`
+	Nodes      []ResourceRef       `json:"nodes"`
+	Edges      []GraphEdge         `json:"edges"`
+	NodeStates []TopologyNodeState `json:"nodeStates,omitempty"`
+}
+
+type TopologyNodeState struct {
+	Resource  ResourceRef `json:"resource"`
+	State     string      `json:"state"`
+	StateText string      `json:"stateText"`
+	Summary   string      `json:"summary,omitempty"`
+	Role      string      `json:"role,omitempty"`
 }

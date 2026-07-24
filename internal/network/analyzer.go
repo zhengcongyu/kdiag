@@ -167,6 +167,7 @@ func (a *Analyzer) Analyze(ctx context.Context, request Request, snapshot Snapsh
 		add("endpointslices", "EndpointSlice", Failed, "没有代表该 Service 的 EndpointSlice", model.EvidenceSupporting)
 		return fail(result, "no_endpointslice", "Service 当前没有 Endpoint")
 	}
+	add("endpointslices", "EndpointSlice", Passed, fmt.Sprintf("发现 %d 个代表该 Service 的 EndpointSlice", len(slices)), model.EvidenceNeutral)
 	ready := readyEndpoints(slices)
 	if ready == 0 {
 		add("ready-endpoints", "Ready Endpoint", Failed, "所有 EndpointSlice 的 Ready Endpoint 数量为 0", model.EvidenceSupporting)
@@ -178,6 +179,7 @@ func (a *Analyzer) Analyze(ctx context.Context, request Request, snapshot Snapsh
 		add("service-port", "Service 端口", Failed, "请求端口未在 Service ports 中声明", model.EvidenceSupporting)
 		return fail(result, "service_port_not_found", "目标端口不属于该 Service")
 	}
+	add("service-port", "Service 端口", Passed, fmt.Sprintf("Service 已声明请求端口 %d", request.Port), model.EvidenceNeutral)
 	mismatched := []string{}
 	for _, pod := range matched {
 		resolved, ok := resolveTargetPort(servicePort.TargetPort, pod.ContainerPorts)
@@ -195,7 +197,10 @@ func (a *Analyzer) Analyze(ctx context.Context, request Request, snapshot Snapsh
 	}
 	if len(mismatched) > 0 {
 		add("target-port", "targetPort", Failed, "targetPort 无法解析到后端 Pod 声明的容器端口："+strings.Join(mismatched, ", "), model.EvidenceSupporting)
-		result.Remediation = []string{"将 Service targetPort 改为后端容器实际监听端口或正确的命名端口；变更前先审查 Manifest。"}
+		result.Remediation = []string{
+			"将 Service targetPort 改为后端容器实际监听端口或正确的命名端口；变更前先审查 Manifest。",
+			"只读变更预览：spec.ports[].targetPort: <当前值> → <Pod 实际声明端口>（KDiag 不会自动应用）。",
+		}
 		result.Verification = []string{"确认 EndpointSlice 仍有 Ready Endpoint。", "分别验证 Pod IP:port 与 Service IP:port，二者都应成功。"}
 		return fail(result, "target_port_mismatch", "Service 将流量转发到了后端未声明的端口")
 	}
@@ -231,7 +236,37 @@ func (a *Analyzer) Analyze(ctx context.Context, request Request, snapshot Snapsh
 
 func fail(result Result, rootCause, summary string) Result {
 	result.Status, result.RootCause, result.Summary = model.StatusCompleted, rootCause, summary
+	appendSkippedSteps(&result)
 	return result
+}
+
+func appendSkippedSteps(result *Result) {
+	path := []struct{ id, name string }{
+		{"source", "源工作负载"}, {"dns", "DNS"}, {"service", "Service"},
+		{"selector", "Service selector"}, {"endpointslices", "EndpointSlice"},
+		{"ready-endpoints", "Ready Endpoint"}, {"service-port", "Service 端口"},
+		{"target-port", "目标端口"}, {"network-policy", "NetworkPolicy"},
+		{"active-probe", "TCP / HTTP"},
+	}
+	existing := map[string]bool{}
+	for _, step := range result.Steps {
+		existing[step.ID] = true
+	}
+	for _, expected := range path {
+		if existing[expected.id] {
+			continue
+		}
+		result.Steps = append(result.Steps, Step{
+			ID: expected.id, Name: expected.name, Status: Skipped,
+			Summary: "因上游已经阻断，此步骤未执行",
+			Evidence: model.Evidence{
+				ID: "network/" + expected.id, Role: model.EvidenceMissing,
+				Source: "network-static-analyzer", ObservedAt: time.Now().UTC(),
+				Summary: "因上游已经阻断，此步骤未执行", Freshness: 1,
+				DedupSource: "network/" + expected.id,
+			},
+		})
+	}
 }
 
 func selectPods(pods []Pod, selector map[string]string) []Pod {
