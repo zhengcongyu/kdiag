@@ -86,7 +86,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, result any) 
 	if err != nil {
 		return fmt.Errorf("API request failed: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		var apiError struct {
 			Error struct{ Code, Message string }

@@ -33,7 +33,9 @@ func TestHealthAndValidation(t *testing.T) {
 	if response.StatusCode != http.StatusOK || response.Header.Get("X-Request-ID") == "" {
 		t.Fatalf("unexpected response: %s", response.Status)
 	}
-	response.Body.Close()
+	if err := response.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
 	response, err = http.Post(server.URL+"/api/v1/diagnoses", "application/json", strings.NewReader(`{}`))
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +43,9 @@ func TestHealthAndValidation(t *testing.T) {
 	if response.StatusCode != http.StatusBadRequest {
 		t.Fatalf("got %d", response.StatusCode)
 	}
-	response.Body.Close()
+	if err := response.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestDiagnosisSSE(t *testing.T) {
@@ -70,7 +74,7 @@ func TestDiagnosisSSE(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stream.Body.Close()
+	defer func() { _ = stream.Body.Close() }()
 	scanner := bufio.NewScanner(stream.Body)
 	events := []string{}
 	for scanner.Scan() {
