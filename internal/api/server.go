@@ -350,6 +350,9 @@ func (s *Server) createNetworkDiagnosis(w http.ResponseWriter, r *http.Request) 
 			s.hub.publish(task.ID, diagnosis.Event{Type: "diagnosis_failed", Data: task.Error})
 			return
 		}
+		if snapshot.Service.Ref.UID != "" {
+			task.Target = snapshot.Service.Ref
+		}
 		result := s.network.Analyze(ctx, request.Request, snapshot)
 		for _, networkStep := range result.Steps {
 			stepStarted := time.Now().UTC()

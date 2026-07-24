@@ -18,16 +18,18 @@ spec:
     spec:
       containers:
         - name: payment
-          image: nginx:1.27-alpine
+          image: busybox:1.36.1
           ports:
             - {name: http, containerPort: 8080}
           command: ["/bin/sh", "-c"]
-          args: ["sed -i 's/listen       80;/listen       8080;/' /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+          args: ["printf 'payment ok\\n' >/tmp/index.html; exec httpd -f -p 8080 -h /tmp"]
           readinessProbe:
-            httpGet: {path: /, port: http}
+            tcpSocket: {port: http}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: {drop: ["ALL"]}
+            runAsNonRoot: true
+            runAsUser: 65534
 ---
 apiVersion: v1
 kind: Service
@@ -38,4 +40,3 @@ spec:
   selector: {app: payment}
   ports:
     - {name: http, port: 80, targetPort: 9090}
-

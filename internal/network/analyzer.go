@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -196,10 +197,19 @@ func (a *Analyzer) Analyze(ctx context.Context, request Request, snapshot Snapsh
 		}
 	}
 	if len(mismatched) > 0 {
-		add("target-port", "targetPort", Failed, "targetPort 无法解析到后端 Pod 声明的容器端口："+strings.Join(mismatched, ", "), model.EvidenceSupporting)
+		declaredPorts := declaredContainerPorts(matched)
+		detail := fmt.Sprintf(
+			"Service 端口 %d 当前转发到 targetPort %s，但后端 Pod 声明的容器端口为 %s；不匹配 Pod：%s",
+			servicePort.Port, servicePort.TargetPort, strings.Join(declaredPorts, ", "), strings.Join(mismatched, ", "),
+		)
+		add("target-port", "targetPort", Failed, detail, model.EvidenceSupporting)
+		suggestedPort := "<后端实际监听端口>"
+		if len(declaredPorts) == 1 {
+			suggestedPort = declaredPorts[0]
+		}
 		result.Remediation = []string{
-			"将 Service targetPort 改为后端容器实际监听端口或正确的命名端口；变更前先审查 Manifest。",
-			"只读变更预览：spec.ports[].targetPort: <当前值> → <Pod 实际声明端口>（KDiag 不会自动应用）。",
+			fmt.Sprintf("将 Service targetPort 从 %s 改为后端容器实际监听端口或正确的命名端口；变更前先审查 Manifest。", servicePort.TargetPort),
+			fmt.Sprintf("只读变更预览：spec.ports[].targetPort: %s → %s（KDiag 不会自动应用）。", servicePort.TargetPort, suggestedPort),
 		}
 		result.Verification = []string{"确认 EndpointSlice 仍有 Ready Endpoint。", "分别验证 Pod IP:port 与 Service IP:port，二者都应成功。"}
 		return fail(result, "target_port_mismatch", "Service 将流量转发到了后端未声明的端口")
@@ -231,6 +241,28 @@ func (a *Analyzer) Analyze(ctx context.Context, request Request, snapshot Snapsh
 		add("active-probe", "主动探测", Skipped, "主动探测默认关闭", model.EvidenceNeutral)
 	}
 	result.Summary = "静态检查未发现明确阻断，但缺少实际流量与 CNI 数据，不能宣称网络完全正常"
+	return result
+}
+
+func declaredContainerPorts(pods []Pod) []string {
+	seen := map[int32]bool{}
+	for _, pod := range pods {
+		for _, port := range pod.ContainerPorts {
+			seen[port] = true
+		}
+	}
+	ports := make([]int, 0, len(seen))
+	for port := range seen {
+		ports = append(ports, int(port))
+	}
+	sort.Ints(ports)
+	result := make([]string, 0, len(ports))
+	for _, port := range ports {
+		result = append(result, strconv.Itoa(port))
+	}
+	if len(result) == 0 {
+		return []string{"未声明"}
+	}
 	return result
 }
 

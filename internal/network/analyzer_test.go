@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/zhengcongyu/kdiag/pkg/model"
@@ -41,6 +42,14 @@ func TestTargetPortMismatchIsPreciselyLocated(t *testing.T) {
 	}
 	if !failedAtTargetPort || !skippedAfterFailure {
 		t.Fatalf("diagnosis did not mark targetPort as the blocking point: %#v", result.Steps)
+	}
+	if len(result.Remediation) < 2 || !strings.Contains(result.Remediation[1], "9090 → 8080") {
+		t.Fatalf("remediation does not contain an exact read-only targetPort diff: %#v", result.Remediation)
+	}
+	if !strings.Contains(result.Steps[7].Summary, "Service 端口 80") ||
+		!strings.Contains(result.Steps[7].Summary, "targetPort 9090") ||
+		!strings.Contains(result.Steps[7].Summary, "8080") {
+		t.Fatalf("targetPort comparison is incomplete: %s", result.Steps[7].Summary)
 	}
 }
 
