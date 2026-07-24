@@ -94,8 +94,10 @@ func buildPodObservation(observation *rules.Observation, target inventory.Item, 
 				observation.ContainerTerminatedReason = stringPointer(reason)
 			}
 			if code, ok := numberValue(terminated["exitCode"]); ok {
-				value := int32(code)
-				observation.ExitCode = &value
+				if code >= -1<<31 && code <= 1<<31-1 {
+					value := int32(code)
+					observation.ExitCode = &value
+				}
 			}
 		}
 	}
