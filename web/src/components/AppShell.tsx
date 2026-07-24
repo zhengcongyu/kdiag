@@ -1,4 +1,4 @@
-import {Box, Divider, List, ListItemButton, ListItemIcon, ListItemText, Stack, Typography} from "@mui/material";
+import {Box, Divider, List, ListItemButton, ListItemIcon, ListItemText, MenuItem, Select, Stack, Typography} from "@mui/material";
 import {useQuery} from "@tanstack/react-query";
 import {
   AccountTreeOutlined, AnalyticsOutlined, BugReportOutlined, DashboardOutlined,
@@ -7,17 +7,19 @@ import {
 } from "@mui/icons-material";
 import {NavLink, Outlet} from "react-router-dom";
 import {api} from "../api";
+import {useLanguage} from "../i18n";
 
 const navigation = [
-  ["/", "集群全景", DashboardOutlined],
-  ["/diagnose", "智能诊断", TroubleshootOutlined],
-  ["/incidents", "问题中心", NotificationsNoneOutlined],
-  ["/network", "网络路径", HubOutlined],
-  ["/replay", "变更与回放", HistoryOutlined],
-  ["/overview", "诊断概览", AnalyticsOutlined]
-];
+  ["/", "cluster", DashboardOutlined],
+  ["/diagnose", "diagnose", TroubleshootOutlined],
+  ["/incidents", "incidents", NotificationsNoneOutlined],
+  ["/network", "network", HubOutlined],
+  ["/replay", "replay", HistoryOutlined],
+  ["/overview", "overview", AnalyticsOutlined]
+] as const;
 
 export function AppShell() {
+  const {language, setLanguage, t} = useLanguage();
   const cluster = useQuery({
     queryKey: ["cluster-overview"],
     queryFn: api.clusterOverview,
@@ -38,29 +40,29 @@ export function AppShell() {
           </Box>
           <Typography variant="h6" sx={{fontSize: 19}}>KDiag</Typography>
         </Box>
-        <List component="nav" aria-label="主导航" sx={{px: 1, pt: 1}}>
-          {navigation.map(([to, label, Icon]) => (
+        <List component="nav" aria-label="???" sx={{px: 1, pt: 1}}>
+          {navigation.map(([to, key, Icon]) => (
             <ListItemButton key={to as string} component={NavLink} to={to as string} end={to === "/"}
               sx={{borderRadius: 1.5, minHeight: 42, mb: .35, px: 1.25,
                 "&.active": {bgcolor: "#e8f1ff", color: "primary.main"},
                 "&:focus-visible": {outline: "2px solid #007aff", outlineOffset: 1}}}>
               <ListItemIcon sx={{minWidth: 34, color: "inherit"}}><Icon sx={{fontSize: 19}} /></ListItemIcon>
-              <ListItemText primary={label as string} slotProps={{primary: {fontSize: 14, fontWeight: 550}}} />
+              <ListItemText primary={t(key)} slotProps={{primary: {fontSize: 14, fontWeight: 550}}} />
             </ListItemButton>
           ))}
         </List>
         <Divider sx={{mx: 1.5, my: 1}} />
         <List sx={{px: 1}}>
-          {[
-            ["/policies", "策略与告警", PolicyOutlined],
-            ["/reports", "报告中心", BugReportOutlined],
-            ["/topology", "资源拓扑", AccountTreeOutlined],
-            ["/settings", "系统设置", SettingsOutlined]
-          ].map(([to, label, Icon]) => (
+          {([
+            ["/policies", "policies", PolicyOutlined],
+            ["/reports", "reports", BugReportOutlined],
+            ["/topology", "topology", AccountTreeOutlined],
+            ["/settings", "settings", SettingsOutlined]
+          ] as const).map(([to, key, Icon]) => (
             <ListItemButton key={to as string} component={NavLink} to={to as string}
               sx={{borderRadius: 1.5, "&.active": {bgcolor: "#e8f1ff", color: "primary.main"}}}>
               <ListItemIcon sx={{minWidth: 34, color: "inherit"}}><Icon sx={{fontSize: 19}} /></ListItemIcon>
-              <ListItemText primary={label as string} />
+              <ListItemText primary={t(key)} />
             </ListItemButton>
           ))}
         </List>
@@ -71,13 +73,18 @@ export function AppShell() {
               <Typography variant="body2" sx={{fontWeight: 650}} noWrap>{connection?.name ?? "local-k8s"}</Typography>
             </Stack>
             <Typography variant="caption" color={connected ? "success.main" : "text.secondary"}>
-              {connected ? "已连接" : connection?.status === "syncing" ? "同步中" : "连接不可用"}
+              {connected ? t("connected") : connection?.status === "syncing" ? t("syncing") : t("unavailable")}
             </Typography>
             <Typography component="div" variant="caption" color="text.secondary" sx={{mt: .5}}>
-              {connection?.serverVersion ?? "等待集群版本"}
+              {connection?.serverVersion ?? "??????"}
             </Typography>
           </Box>
-          <Typography variant="caption" color="text.secondary">KDiag v0.3.1</Typography>
+          <Select size="small" fullWidth value={language} aria-label={t("language")}
+            onChange={(event) => setLanguage(event.target.value as "zh-CN" | "en")} sx={{mb: 1, fontSize: 12}}>
+            <MenuItem value="zh-CN">{t("chinese")}</MenuItem>
+            <MenuItem value="en">{t("english")}</MenuItem>
+          </Select>
+          <Typography variant="caption" color="text.secondary">KDiag v0.4.0</Typography>
         </Box>
       </Box>
       <Box component="main" sx={{ml: "188px", minWidth: 0, width: "calc(100% - 188px)"}}>

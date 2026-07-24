@@ -1,5 +1,5 @@
 import type {
-  ClusterOverview, DiagnosisTask, Incident, InventoryResource, InventoryResult, ResourceRef
+  AccessReport, ClusterOverview, DiagnosisTask, Incident, InventoryResource, InventoryResult, RBACManifest, ResourceRef
 } from "./types";
 
 export class ApiError extends Error {
@@ -23,7 +23,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await response.json().catch(() => ({error: {message: response.statusText}}));
     throw new ApiError(
       response.status,
-      body.error?.message ?? "请求失败",
+      body.error?.message ?? "????",
       body.error?.code,
       body.error?.requestId
     );
@@ -33,6 +33,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   clusterOverview: () => request<ClusterOverview>("/api/v1/cluster/overview"),
+  access: () => request<AccessReport>("/api/v1/access"),
+  accessRBAC: () => request<RBACManifest>("/api/v1/access/rbac"),
   inventory: (filters: Record<string, string | number | undefined>) => {
     const query = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {

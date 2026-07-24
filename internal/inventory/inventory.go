@@ -15,8 +15,11 @@ import (
 
 	"github.com/zhengcongyu/kdiag/internal/collector"
 	"github.com/zhengcongyu/kdiag/pkg/model"
+	authorizationv1 "k8s.io/api/authorization/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+	authorizationclient "k8s.io/client-go/kubernetes/typed/authorization/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -26,7 +29,25 @@ const (
 	StateWarning  = "warning"
 	StateCritical = "critical"
 	StateUnknown  = "unknown"
+	StateObserved = "observed"
 )
+
+type AccessCheck struct {
+	Kind       string          `json:"kind"`
+	Group      string          `json:"group"`
+	Resource   string          `json:"resource"`
+	Namespaced bool            `json:"namespaced"`
+	Verbs      map[string]bool `json:"verbs"`
+	Allowed    bool            `json:"allowed"`
+	Reason     string          `json:"reason,omitempty"`
+}
+
+type AccessReport struct {
+	Status    string        `json:"status"`
+	CheckedAt time.Time     `json:"checkedAt,omitempty"`
+	Checks    []AccessCheck `json:"checks"`
+	Message   string        `json:"message"`
+}
 
 type Connection struct {
 	Name          string    `json:"name"`
@@ -88,6 +109,7 @@ type Result struct {
 
 type Reader interface {
 	Connection() Connection
+	Access() AccessReport
 	List(Query) Result
 	Get(string) (Item, error)
 }
@@ -95,6 +117,7 @@ type Reader interface {
 type Store struct {
 	mu         sync.RWMutex
 	connection Connection
+	access     AccessReport
 	resources  map[string]model.Resource
 }
 
@@ -112,6 +135,18 @@ func (s *Store) Connection() Connection {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.connection
+}
+
+func (s *Store) SetAccess(access AccessReport) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.access = access
+}
+
+func (s *Store) Access() AccessReport {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.access
 }
 
 func (s *Store) Apply(change collector.Change) {
@@ -214,6 +249,22 @@ func NewAuto(logger *slog.Logger) (*Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create Kubernetes dynamic client: %w", err)
 	}
+	access := AccessReport{
+		Status: "unavailable", Checks: []AccessCheck{},
+		Message: "Unable to verify Kubernetes permissions; collection will still attempt the configured read-only watches.",
+	}
+	allowedKinds := map[string]bool(nil)
+	if authorization, authorizationErr := authorizationclient.NewForConfig(config); authorizationErr == nil {
+		accessCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		access = checkAccess(accessCtx, authorization)
+		cancel()
+		if access.Status != "unavailable" {
+			allowedKinds = map[string]bool{}
+			for _, check := range access.Checks {
+				allowedKinds[check.Kind] = check.Verbs["list"] && check.Verbs["watch"]
+			}
+		}
+	}
 	version := ""
 	if discoveryClient, discoveryErr := discovery.NewDiscoveryClientForConfig(config); discoveryErr == nil {
 		if info, versionErr := discoveryClient.ServerVersion(); versionErr == nil {
@@ -222,19 +273,23 @@ func NewAuto(logger *slog.Logger) (*Manager, error) {
 	}
 	connection := Connection{
 		Name: name, Status: "syncing", Mode: mode, Server: config.Host,
-		ServerVersion: version, Message: "正在同步 Kubernetes API 缓存",
+		ServerVersion: version, Message: "???? Kubernetes API ??",
 	}
+	store := NewStore(connection)
+	store.SetAccess(access)
 	return &Manager{
-		store: NewStore(connection), collector: collector.NewKubernetes(name, client, 0),
+		store: store, collector: collector.NewKubernetesForKinds(name, client, 0, allowedKinds),
 		logger: logger,
 	}, nil
 }
 
 func Disconnected(message string) *Store {
-	return NewStore(Connection{
+	store := NewStore(Connection{
 		Name: "local-k8s", Status: "disconnected", Mode: "unavailable",
 		Message: message,
 	})
+	store.SetAccess(AccessReport{Status: "unavailable", Checks: []AccessCheck{}, Message: "Kubernetes connection is unavailable."})
+	return store
 }
 
 func (m *Manager) Reader() Reader { return m.store }
@@ -262,7 +317,7 @@ func (m *Manager) Run(ctx context.Context) {
 	}
 	connection := m.store.Connection()
 	connection.Status = "connected"
-	connection.Message = "Informer 缓存已同步"
+	connection.Message = "Informer ?????"
 	connection.SyncedAt = time.Now().UTC()
 	m.store.SetConnection(connection)
 	m.logger.Info("kubernetes_inventory_synced", "cluster", connection.Name, "version", connection.ServerVersion)
@@ -272,9 +327,49 @@ func (m *Manager) Run(ctx context.Context) {
 func (m *Manager) fail(err error) {
 	connection := m.store.Connection()
 	connection.Status = "degraded"
-	connection.Message = "Kubernetes 缓存同步失败：" + err.Error()
+	connection.Message = "Kubernetes ???????" + err.Error()
 	m.store.SetConnection(connection)
 	m.logger.Error("kubernetes_inventory_failed", "error", err)
+}
+
+func checkAccess(ctx context.Context, client authorizationclient.AuthorizationV1Interface) AccessReport {
+	report := AccessReport{
+		Status: "complete", CheckedAt: time.Now().UTC(), Checks: []AccessCheck{},
+		Message: "All configured Kubernetes resources have read-only get/list/watch access.",
+	}
+	for _, resource := range collector.WatchedResources() {
+		check := AccessCheck{
+			Kind: resource.Kind, Group: resource.Group, Resource: resource.Resource,
+			Namespaced: resource.Namespaced, Verbs: map[string]bool{},
+		}
+		for _, verb := range []string{"get", "list", "watch"} {
+			review, err := client.SelfSubjectAccessReviews().Create(ctx, &authorizationv1.SelfSubjectAccessReview{
+				Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+					ResourceAttributes: &authorizationv1.ResourceAttributes{
+						Group: resource.Group, Version: resource.Version,
+						Resource: resource.Resource, Verb: verb,
+					},
+				},
+			}, metav1.CreateOptions{})
+			if err != nil {
+				return AccessReport{
+					Status: "unavailable", CheckedAt: time.Now().UTC(), Checks: []AccessCheck{},
+					Message: "Kubernetes permission review failed: " + err.Error(),
+				}
+			}
+			check.Verbs[verb] = review.Status.Allowed
+			if !review.Status.Allowed && check.Reason == "" {
+				check.Reason = valueOr(review.Status.Reason, review.Status.EvaluationError)
+			}
+		}
+		check.Allowed = check.Verbs["get"] && check.Verbs["list"] && check.Verbs["watch"]
+		if !check.Allowed {
+			report.Status = "partial"
+			report.Message = "Some resource kinds are not collectible with the current identity. Use the generated read-only RBAC manifest to grant access manually."
+		}
+		report.Checks = append(report.Checks, check)
+	}
+	return report
 }
 
 func loadConfig() (*rest.Config, string, string, error) {
@@ -400,16 +495,25 @@ func directRelations(resource model.Resource, resources []model.Resource) []Rela
 func summarize(resource model.Resource, all []model.Resource) (state, text, ready, node, ip, summary string) {
 	spec, status := rawMap(resource.Spec), rawMap(resource.Status)
 	switch resource.Ref.Kind {
+	case "Namespace":
+		phase := stringValue(status["phase"])
+		if phase == "Active" {
+			return StateHealthy, "Active", "1/1", "", "", "Namespace is active"
+		}
+		if phase == "Terminating" {
+			return StateWarning, "Terminating", "0/1", "", "", "Namespace deletion is in progress"
+		}
+		return StateObserved, valueOr(phase, "Observed"), "", "", "", "Namespace was collected; Kubernetes did not provide a standard health condition"
 	case "Node":
 		for _, condition := range nestedSlice(status, "conditions") {
 			if stringValue(condition["type"]) == "Ready" {
 				if stringValue(condition["status"]) == "True" {
-					return StateHealthy, "就绪", "1/1", "", nodeAddress(status), "节点 Ready 条件为 True"
+					return StateHealthy, "??", "1/1", "", nodeAddress(status), "?? Ready ??? True"
 				}
-				return StateCritical, "未就绪", "0/1", "", nodeAddress(status), "节点 Ready 条件不为 True"
+				return StateCritical, "???", "0/1", "", nodeAddress(status), "?? Ready ???? True"
 			}
 		}
-		return StateUnknown, "缺少 Ready 条件", "", "", nodeAddress(status), "无法确认节点就绪状态"
+		return StateUnknown, "?? Ready ??", "", "", nodeAddress(status), "??????????"
 	case "Pod":
 		node, ip = stringValue(spec["nodeName"]), stringValue(status["podIP"])
 		phase := stringValue(status["phase"])
@@ -422,24 +526,24 @@ func summarize(resource model.Resource, all []model.Resource) (state, text, read
 			if waiting := nestedMap(container, "state", "waiting"); waiting != nil {
 				reason := stringValue(waiting["reason"])
 				if reason != "" && reason != "ContainerCreating" && reason != "PodInitializing" {
-					return StateCritical, reason, fmt.Sprintf("%d/%d", readyCount, len(containerStatuses)), node, ip, "容器处于 " + reason
+					return StateCritical, reason, fmt.Sprintf("%d/%d", readyCount, len(containerStatuses)), node, ip, "???? " + reason
 				}
 			}
 		}
 		ready = fmt.Sprintf("%d/%d", readyCount, len(containerStatuses))
 		if phase == "Succeeded" {
-			return StateHealthy, "已完成", ready, node, ip, "Pod 已成功完成"
+			return StateHealthy, "???", ready, node, ip, "Pod ?????"
 		}
 		if phase == "Failed" {
-			return StateCritical, "失败", ready, node, ip, "Pod phase 为 Failed"
+			return StateCritical, "??", ready, node, ip, "Pod phase ? Failed"
 		}
 		if phase == "Running" && len(containerStatuses) > 0 && readyCount == len(containerStatuses) {
-			return StateHealthy, "就绪", ready, node, ip, "所有容器已就绪"
+			return StateHealthy, "??", ready, node, ip, "???????"
 		}
 		if phase == "Pending" {
-			return StateWarning, "等待中", ready, node, ip, "Pod 仍在等待调度或启动"
+			return StateWarning, "???", ready, node, ip, "Pod ?????????"
 		}
-		return StateWarning, "未就绪", ready, node, ip, "Pod 尚未全部就绪"
+		return StateWarning, "???", ready, node, ip, "Pod ??????"
 	case "Deployment", "StatefulSet", "ReplicaSet":
 		desired := intValue(spec["replicas"])
 		available := intValue(status["availableReplicas"])
@@ -448,67 +552,67 @@ func summarize(resource model.Resource, all []model.Resource) (state, text, read
 		}
 		ready = fmt.Sprintf("%d/%d", available, desired)
 		if desired == 0 {
-			return StateHealthy, "已缩容", ready, "", "", "期望副本为 0"
+			return StateHealthy, "???", ready, "", "", "????? 0"
 		}
 		if desired > 0 && available >= desired {
-			return StateHealthy, "可用", ready, "", "", "期望副本均已可用"
+			return StateHealthy, "??", ready, "", "", "????????"
 		}
 		if available == 0 && desired > 0 {
-			return StateCritical, "不可用", ready, "", "", "没有可用副本"
+			return StateCritical, "???", ready, "", "", "??????"
 		}
-		return StateWarning, "部分可用", ready, "", "", "可用副本少于期望值"
+		return StateWarning, "????", ready, "", "", "?????????"
 	case "DaemonSet":
 		desired, available := intValue(status["desiredNumberScheduled"]), intValue(status["numberAvailable"])
 		ready = fmt.Sprintf("%d/%d", available, desired)
 		if desired > 0 && available >= desired {
-			return StateHealthy, "可用", ready, "", "", "所有目标节点均有可用 Pod"
+			return StateHealthy, "??", ready, "", "", "?????????? Pod"
 		}
-		return StateWarning, "部分可用", ready, "", "", "部分目标节点没有可用 Pod"
+		return StateWarning, "????", ready, "", "", "?????????? Pod"
 	case "Service":
 		clusterIP := stringValue(spec["clusterIP"])
 		readyEndpoints, totalEndpoints := endpointCounts(resource, all)
 		ready = fmt.Sprintf("%d/%d", readyEndpoints, totalEndpoints)
 		if stringValue(spec["type"]) == "ExternalName" {
-			return StateHealthy, "外部名称", "", "", stringValue(spec["externalName"]), "ExternalName Service 不使用 EndpointSlice"
+			return StateHealthy, "????", "", "", stringValue(spec["externalName"]), "ExternalName Service ??? EndpointSlice"
 		}
 		if totalEndpoints == 0 {
-			return StateCritical, "无端点", ready, "", clusterIP, "Service 当前没有可以接收请求的后端 Pod"
+			return StateCritical, "???", ready, "", clusterIP, "Service ????????????? Pod"
 		}
 		if readyEndpoints == 0 {
-			return StateCritical, "端点未就绪", ready, "", clusterIP, "EndpointSlice 中 Ready Endpoint 数量为 0"
+			return StateCritical, "?????", ready, "", clusterIP, "EndpointSlice ? Ready Endpoint ??? 0"
 		}
 		if readyEndpoints < totalEndpoints {
-			return StateWarning, "部分就绪", ready, "", clusterIP, "部分 Endpoint 尚未就绪"
+			return StateWarning, "????", ready, "", clusterIP, "?? Endpoint ????"
 		}
-		return StateHealthy, "端点就绪", ready, "", clusterIP, "所有 Endpoint 均已就绪"
+		return StateHealthy, "????", ready, "", clusterIP, "?? Endpoint ????"
 	case "EndpointSlice":
 		readyEndpoints, totalEndpoints := sliceEndpointCounts(spec)
 		ready = fmt.Sprintf("%d/%d", readyEndpoints, totalEndpoints)
 		if totalEndpoints == 0 || readyEndpoints == 0 {
-			return StateCritical, "无就绪端点", ready, "", "", "没有 Ready Endpoint"
+			return StateCritical, "?????", ready, "", "", "?? Ready Endpoint"
 		}
 		if readyEndpoints < totalEndpoints {
-			return StateWarning, "部分就绪", ready, "", "", "部分 Endpoint 尚未就绪"
+			return StateWarning, "????", ready, "", "", "?? Endpoint ????"
 		}
-		return StateHealthy, "端点就绪", ready, "", "", "EndpointSlice 有可用后端"
+		return StateHealthy, "????", ready, "", "", "EndpointSlice ?????"
 	case "PersistentVolumeClaim":
 		phase := stringValue(status["phase"])
 		if phase == "Bound" {
-			return StateHealthy, "已绑定", "1/1", "", stringValue(spec["volumeName"]), "PVC 已绑定到 PersistentVolume"
+			return StateHealthy, "???", "1/1", "", stringValue(spec["volumeName"]), "PVC ???? PersistentVolume"
 		}
 		if phase == "Lost" {
-			return StateCritical, "已丢失", "0/1", "", "", "PVC 绑定已丢失"
+			return StateCritical, "???", "0/1", "", "", "PVC ?????"
 		}
-		return StateWarning, valueOr(phase, "等待中"), "0/1", "", "", "PVC 尚未绑定"
+		return StateWarning, valueOr(phase, "???"), "0/1", "", "", "PVC ????"
 	case "PersistentVolume":
 		phase := stringValue(status["phase"])
 		if phase == "Bound" || phase == "Available" {
-			return StateHealthy, phase, "", "", "", "PersistentVolume 可用"
+			return StateHealthy, phase, "", "", "", "PersistentVolume ??"
 		}
 		if phase == "Failed" {
-			return StateCritical, "失败", "", "", "", "PersistentVolume phase 为 Failed"
+			return StateCritical, "??", "", "", "", "PersistentVolume phase ? Failed"
 		}
-		return StateWarning, valueOr(phase, "未知"), "", "", "", "PersistentVolume 状态需要检查"
+		return StateWarning, valueOr(phase, "??"), "", "", "", "PersistentVolume ??????"
 	case "Job":
 		completions := intValue(spec["completions"])
 		if completions == 0 {
@@ -517,24 +621,59 @@ func summarize(resource model.Resource, all []model.Resource) (state, text, read
 		succeeded, failed := intValue(status["succeeded"]), intValue(status["failed"])
 		ready = fmt.Sprintf("%d/%d", succeeded, completions)
 		if failed > 0 {
-			return StateCritical, "失败", ready, "", "", "Job 有失败的 Pod"
+			return StateCritical, "??", ready, "", "", "Job ???? Pod"
 		}
 		if succeeded >= completions {
-			return StateHealthy, "已完成", ready, "", "", "Job 已达到完成数"
+			return StateHealthy, "???", ready, "", "", "Job ??????"
 		}
-		return StateWarning, "运行中", ready, "", "", "Job 尚未完成"
+		return StateWarning, "???", ready, "", "", "Job ????"
+	case "ConfigMap":
+		return StateObserved, "???", "", "", "", "????????ConfigMap ???????? Condition"
+	case "CronJob":
+		if suspended, _ := spec["suspend"].(bool); suspended {
+			return StateObserved, "???", "", "", "", "CronJob ??????"
+		}
+		active := len(nestedSlice(status, "active"))
+		if active > 0 {
+			return StateHealthy, "?????", fmt.Sprintf("%d active", active), "", "", "CronJob ????? Job"
+		}
+		return StateObserved, "?????", "", "", "", "CronJob ???????????? Job"
+	case "Ingress":
+		addresses := nestedSlice(status, "loadBalancer", "ingress")
+		if len(addresses) > 0 {
+			return StateHealthy, "?????", fmt.Sprintf("%d", len(addresses)), "", "", "Ingress ?????????"
+		}
+		return StateObserved, "?????", "", "", "", "Ingress ???????????????????"
+	case "NetworkPolicy":
+		return StateObserved, "?????", "", "", "", "NetworkPolicy ????????? CNI ??????????????"
+	case "StorageClass":
+		return StateObserved, "?????", "", "", "", "StorageClass ????????? Condition"
+	case "HorizontalPodAutoscaler":
+		current, desired := intValue(status["currentReplicas"]), intValue(status["desiredReplicas"])
+		ready = fmt.Sprintf("%d/%d", current, desired)
+		if conditionState, conditionText, ok := summarizeConditions(status); ok {
+			return conditionState, conditionText, ready, "", "", "?? HPA ??? Condition ??"
+		}
+		return StateObserved, "?????", ready, "", "", "HPA ????????????? Condition"
+	case "PodDisruptionBudget":
+		current, desired := intValue(status["currentHealthy"]), intValue(status["desiredHealthy"])
+		ready = fmt.Sprintf("%d/%d", current, desired)
+		if current >= desired {
+			return StateHealthy, "????", ready, "", "", "???? Pod ????????"
+		}
+		return StateWarning, "????", ready, "", "", "???? Pod ??????????"
 	case "Event":
 		raw := rawMap(resource.Raw)
 		eventType, reason := stringValue(raw["type"]), stringValue(raw["reason"])
 		if eventType == "Warning" {
-			return StateWarning, valueOr(reason, "警告"), "", "", "", stringValue(raw["message"])
+			return StateWarning, valueOr(reason, "??"), "", "", "", stringValue(raw["message"])
 		}
-		return StateHealthy, valueOr(reason, "正常"), "", "", "", stringValue(raw["message"])
+		return StateHealthy, valueOr(reason, "??"), "", "", "", stringValue(raw["message"])
 	default:
 		if conditionState, conditionText, ok := summarizeConditions(status); ok {
-			return conditionState, conditionText, "", "", "", "基于结构化 Condition 汇总"
+			return conditionState, conditionText, "", "", "", "????? Condition ??"
 		}
-		return StateUnknown, "未评估", "", "", "", "KDiag 尚未为此资源类型定义健康判定；详细字段仍可查看"
+		return StateObserved, "???", "", "", "", "?????????????????????????????"
 	}
 }
 
@@ -627,8 +766,10 @@ func severityRank(state string) int {
 		return 1
 	case StateUnknown:
 		return 2
-	default:
+	case StateObserved:
 		return 3
+	default:
+		return 4
 	}
 }
 
@@ -666,10 +807,10 @@ func summarizeConditions(status map[string]any) (string, string, bool) {
 	}
 	for _, condition := range conditions {
 		if stringValue(condition["status"]) == "False" {
-			return StateWarning, valueOr(stringValue(condition["reason"]), "Condition 未满足"), true
+			return StateWarning, valueOr(stringValue(condition["reason"]), "Condition ???"), true
 		}
 	}
-	return StateHealthy, "条件正常", true
+	return StateHealthy, "????", true
 }
 
 func rawMap(raw json.RawMessage) map[string]any {

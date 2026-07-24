@@ -2,8 +2,8 @@ apiVersion: v2
 name: kdiag
 description: Explainable Kubernetes diagnostics platform
 type: application
-version: 0.3.4
-appVersion: "0.3.4"
+version: 0.4.0
+appVersion: "0.4.0"
 home: https://github.com/zhengcongyu/kdiag
 sources:
   - https://github.com/zhengcongyu/kdiag

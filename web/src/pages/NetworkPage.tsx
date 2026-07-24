@@ -10,10 +10,15 @@ import {DiagnosisReportView} from "../components/DiagnosisReportView";
 import {NamespacePicker} from "../components/NamespacePicker";
 import {ResourcePicker} from "../components/ResourcePicker";
 import type {DiagnosisStep, DiagnosisTask, Evidence, Hypothesis, InventoryResource} from "../types";
+import {useLanguage} from "../i18n";
 
-const pathLabels = ["源工作负载", "DNS", "Service", "EndpointSlice", "NetworkPolicy", "目标 Pod", "目标端口", "TCP / HTTP"];
+const pathLabelsZh = ["?????", "DNS", "Service", "EndpointSlice", "NetworkPolicy", "?? Pod", "????", "TCP / HTTP"];
+const pathLabelsEn = ["Source workload", "DNS", "Service", "EndpointSlice", "NetworkPolicy", "Target Pod", "Target port", "TCP / HTTP"];
 
 export function NetworkPage() {
+  const {language} = useLanguage();
+  const l = (zh: string, en: string) => language === "zh-CN" ? zh : en;
+  const pathLabels = language === "zh-CN" ? pathLabelsZh : pathLabelsEn;
   const {id = ""} = useParams();
   const navigate = useNavigate();
   const overview = useQuery({
@@ -70,10 +75,10 @@ export function NetworkPage() {
   }
 
   return <Stack spacing={3} sx={{p: {xs: 2, md: 3.5}}}>
-    <div><Typography variant="h4">网络路径诊断</Typography>
-      <Typography color="text.secondary">逐层检查请求从哪里出发、经过什么、最终卡在哪里。</Typography></div>
-    <Alert severity="info">主动探测默认关闭。没有实际流量与 CNI 证据时，静态检查通过也只会显示“实际连通性未验证”。</Alert>
-    <Box sx={{display: "flex", gap: .7, alignItems: "center", overflowX: "auto", pb: .5}} aria-label="网络诊断路径">
+    <div><Typography variant="h4">{l("??????", "Network path diagnosis")}</Typography>
+      <Typography color="text.secondary">{l("????????????????????????", "Check every hop to see where a request starts, what it crosses and where it is blocked.")}</Typography></div>
+    <Alert severity="info">{l("???????????????? CNI ??????????????????????????", "Active probes are off by default. Static checks cannot prove real connectivity without traffic or CNI evidence.")}</Alert>
+    <Box sx={{display: "flex", gap: .7, alignItems: "center", overflowX: "auto", pb: .5}} aria-label="??????">
       {pathLabels.map((label, index) => <Box key={label} sx={{display: "flex", alignItems: "center", gap: .7}}>
         <Chip size="small" label={label} variant={task?.report?.blockedAt && label.includes(task.report.blockedAt) ? "filled" : "outlined"}
           color={task?.report?.blockedAt && label.includes(task.report.blockedAt) ? "error" : "default"} />
@@ -81,33 +86,33 @@ export function NetworkPage() {
       </Box>)}
     </Box>
     <Card><CardContent><Stack spacing={2}>
-      <Typography variant="h6">选择请求路径</Typography>
+      <Typography variant="h6">{l("??????", "Choose a request path")}</Typography>
       <NamespacePicker value={namespace} onChange={(value) => {
         setNamespace(value); setSource(undefined); setService(undefined); setPort("");
       }} />
-      <TextField select fullWidth label="源资源类型" value={sourceKind}
+      <TextField select fullWidth label={l("?????", "Source kind")} value={sourceKind}
         onChange={(event) => { setSourceKind(event.target.value); setSource(undefined); }}>
         <MenuItem value="Pod">Pod</MenuItem><MenuItem value="Deployment">Deployment</MenuItem>
       </TextField>
-      <ResourcePicker kind={sourceKind} namespace={namespace} label="源工作负载"
+      <ResourcePicker kind={sourceKind} namespace={namespace} label={l("?????", "Source workload")}
         value={source?.ref.uid ?? ""} onChange={setSource} />
-      <ResourcePicker kind="Service" namespace={namespace} label="目标 Service"
+      <ResourcePicker kind="Service" namespace={namespace} label={l("?? Service", "Target Service")}
         value={service?.ref.uid ?? ""} onChange={setService} />
-      <TextField select fullWidth label="目标端口" value={port} disabled={!service || !servicePorts.length}
-        helperText={servicePorts.length ? "来自 Service spec.ports" : "该 Service 没有声明端口"}
+      <TextField select fullWidth label={l("????", "Target port")} value={port} disabled={!service || !servicePorts.length}
+        helperText={servicePorts.length ? l("?? Service spec.ports", "Read from Service spec.ports") : l("? Service ??????", "This Service declares no ports")}
         onChange={(event) => setPort(event.target.value)}>
         {servicePorts.map((item) => <MenuItem key={`${item.name}-${item.port}`} value={String(item.port)}>
-          {item.name || "未命名"} · {item.port} → {String(item.targetPort)}
+          {item.name || "???"} ? {item.port} ? {String(item.targetPort)}
         </MenuItem>)}
       </TextField>
-      <TextField select fullWidth label="协议" value={protocol} onChange={(event) => setProtocol(event.target.value)}>
+      <TextField select fullWidth label={l("??", "Protocol")} value={protocol} onChange={(event) => setProtocol(event.target.value)}>
         <MenuItem value="TCP">TCP</MenuItem><MenuItem value="HTTP">HTTP</MenuItem>
       </TextField>
-      <Button variant="contained" onClick={run} disabled={!source || !service || !port}>开始路径诊断</Button>
+      <Button variant="contained" onClick={run} disabled={!source || !service || !port}>{l("??????", "Start path diagnosis")}</Button>
     </Stack></CardContent></Card>
     {error || savedTask.error ? <Alert severity="error">{error || (savedTask.error as Error).message}</Alert> : null}
     {task ? <DiagnosisReportView task={task} live={!task.report && task.status !== "FAILED"} /> :
-      <Alert severity="info">选择路径后，KDiag 会明确列出已通过、被阻断和未验证的每一层。</Alert>}
+      <Alert severity="info">{l("??????KDiag ?????????????????????", "KDiag lists every passed, blocked and unverified hop.")}</Alert>}
   </Stack>;
 }
 

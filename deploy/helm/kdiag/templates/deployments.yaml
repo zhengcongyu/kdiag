@@ -22,8 +22,14 @@ spec:
           securityContext: {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           envFrom:
             - configMapRef: {name: {{ include "kdiag.fullname" . }}}
-          {{- if .Values.api.databaseSecret.name }}
           env:
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            - name: KDIAG_SERVICE_ACCOUNT
+              value: {{ include "kdiag.fullname" . | quote }}
+            - name: KDIAG_RBAC_NAME
+              value: {{ include "kdiag.fullname" . | quote }}
+          {{- if .Values.api.databaseSecret.name }}
             - name: KDIAG_DATABASE_URL
               valueFrom:
                 secretKeyRef:

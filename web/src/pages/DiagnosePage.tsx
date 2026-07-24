@@ -9,10 +9,13 @@ import {DiagnosisReportView} from "../components/DiagnosisReportView";
 import {NamespacePicker} from "../components/NamespacePicker";
 import {ResourcePicker} from "../components/ResourcePicker";
 import type {DiagnosisStep, DiagnosisTask, Evidence, Hypothesis, InventoryResource} from "../types";
+import {useLanguage} from "../i18n";
 
 const supportedKinds = ["Deployment", "Pod", "Service", "Node", "PersistentVolumeClaim"];
 
 export function DiagnosePage() {
+  const {language} = useLanguage();
+  const l = (zh: string, en: string) => language === "zh-CN" ? zh : en;
   const {id = ""} = useParams();
   const navigate = useNavigate();
   const overview = useQuery({
@@ -68,29 +71,29 @@ export function DiagnosePage() {
   }
 
   return <Stack spacing={3} sx={{p: {xs: 2, md: 3.5}}}>
-    <div><Typography variant="h4">资源智能诊断</Typography>
-      <Typography color="text.secondary">KDiag 会自动读取实时状态、关联资源和事件，先给结论，再按需展示技术证据。</Typography></div>
+    <div><Typography variant="h4">{l("??????", "Resource diagnosis")}</Typography>
+      <Typography color="text.secondary">{l("KDiag ?????????????????????????????????", "KDiag reads live status, related resources and Events, then leads with a conclusion before technical evidence.")}</Typography></div>
     <Card><CardContent><Stack spacing={2.25}>
-      <Typography variant="h6">选择要诊断的资源</Typography>
-      {overview.error ? <Alert severity="error">集群资源目录不可用：{(overview.error as Error).message}</Alert> : null}
-      <TextField select fullWidth label="资源类型" value={kind} onChange={(event) => changeKind(event.target.value)}>
+      <Typography variant="h6">{l("????????", "Choose a resource")}</Typography>
+      {overview.error ? <Alert severity="error">{l("??????????", "Cluster inventory unavailable: ")}{(overview.error as Error).message}</Alert> : null}
+      <TextField select fullWidth label={l("????", "Resource kind")} value={kind} onChange={(event) => changeKind(event.target.value)}>
         {(availableKinds.length ? availableKinds : supportedKinds).map((value) =>
           <MenuItem key={value} value={value}>{value}</MenuItem>)}
       </TextField>
       <NamespacePicker value={namespace} disabled={kind === "Node"}
         onChange={(value) => { setNamespace(value); setResource(undefined); }} />
       <ResourcePicker kind={kind} namespace={kind === "Node" ? undefined : namespace}
-        label="资源名称" value={resource?.ref.uid ?? ""} onChange={setResource} />
+        label={l("????", "Resource")} value={resource?.ref.uid ?? ""} onChange={setResource} />
       {resource ? <Stack direction="row" gap={1} flexWrap="wrap">
         <Chip size="small" label={resource.stateText} color={resource.state === "healthy" ? "success" : "warning"} />
-        <Chip size="small" label={resource.summary || "等待诊断"} variant="outlined" />
-        {resource.node ? <Chip size="small" label={`节点 ${resource.node}`} /> : null}
+        <Chip size="small" label={resource.summary || "????"} variant="outlined" />
+        {resource.node ? <Chip size="small" label={`?? ${resource.node}`} /> : null}
       </Stack> : null}
-      <Button variant="contained" onClick={run} disabled={!resource}>开始自动诊断</Button>
+      <Button variant="contained" onClick={run} disabled={!resource}>{l("??????", "Start diagnosis")}</Button>
     </Stack></CardContent></Card>
     {error || savedTask.error ? <Alert severity="error">{error || (savedTask.error as Error).message}</Alert> : null}
     {task ? <DiagnosisReportView task={task} live={!task.report && task.status !== "FAILED"} /> :
-      <Alert severity="info">选择资源后，系统会自动总结“哪里有问题、哪里正常、哪里还缺证据”，不会要求你自行阅读 YAML。</Alert>}
+      <Alert severity="info">{l("?????????????????????????????????????????? YAML?", "After you select a resource, KDiag summarizes what failed, what passed and which evidence is still missing.")}</Alert>}
   </Stack>;
 }
 

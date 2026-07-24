@@ -4,6 +4,7 @@ import {BrowserRouter} from "react-router-dom";
 import {QueryClient, QueryClientProvider} from "@tanstack/react-query";
 import {createTheme, CssBaseline, ThemeProvider} from "@mui/material";
 import {App} from "./App";
+import {LanguageProvider} from "./i18n";
 import "./styles.css";
 
 const client = new QueryClient({defaultOptions: {queries: {retry: 1, staleTime: 10_000}}});
@@ -38,6 +39,6 @@ const theme = createTheme({
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode><ThemeProvider theme={theme}><CssBaseline />
-    <QueryClientProvider client={client}><BrowserRouter><App /></BrowserRouter></QueryClientProvider>
+    <QueryClientProvider client={client}><LanguageProvider><BrowserRouter><App /></BrowserRouter></LanguageProvider></QueryClientProvider>
   </ThemeProvider></StrictMode>
 );

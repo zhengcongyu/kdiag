@@ -4,6 +4,19 @@ All notable changes are documented here. The format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-25
+
+### Added
+
+- Add effective Kubernetes `get/list/watch` permission checks for every collected resource kind.
+- Add a Settings permission matrix and manually reviewed read-only RBAC manifest generator.
+- Add persistent Chinese/English language switching for navigation, cluster health, settings, diagnosis, network paths, and troubleshooting reports.
+
+### Changed
+
+- Distinguish resources that are successfully observed but have no universal health condition from resources with missing evidence.
+- Continue collecting authorized resource kinds when another kind is denied instead of failing the entire informer inventory.
+
 ## [0.3.4] - 2026-07-25
 
 ### Fixed

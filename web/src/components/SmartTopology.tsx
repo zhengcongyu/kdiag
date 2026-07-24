@@ -10,12 +10,13 @@ import {
 import type {GraphSnapshot, ResourceState, TopologyNodeState} from "../types";
 
 const meta: Record<string, {label: string; color: string; bg: string; Icon: typeof CheckCircleOutline}> = {
-  critical: {label: "故障", color: "#c43228", bg: "#fff0ef", Icon: ErrorOutline},
-  warning: {label: "需关注", color: "#9a5b00", bg: "#fff7e8", Icon: ReportProblemOutlined},
-  suspected: {label: "疑似", color: "#9a5b00", bg: "#fff7e8", Icon: ReportProblemOutlined},
-  affected: {label: "受影响", color: "#6f42c1", bg: "#f5f0ff", Icon: ReportProblemOutlined},
-  healthy: {label: "健康", color: "#16833d", bg: "#edf8f0", Icon: CheckCircleOutline},
-  unknown: {label: "未知", color: "#6e6e73", bg: "#f2f2f7", Icon: HelpOutline}
+  critical: {label: "??", color: "#c43228", bg: "#fff0ef", Icon: ErrorOutline},
+  warning: {label: "???", color: "#9a5b00", bg: "#fff7e8", Icon: ReportProblemOutlined},
+  suspected: {label: "??", color: "#9a5b00", bg: "#fff7e8", Icon: ReportProblemOutlined},
+  affected: {label: "???", color: "#6f42c1", bg: "#f5f0ff", Icon: ReportProblemOutlined},
+  healthy: {label: "??", color: "#16833d", bg: "#edf8f0", Icon: CheckCircleOutline},
+  unknown: {label: "??", color: "#6e6e73", bg: "#f2f2f7", Icon: HelpOutline},
+  observed: {label: "???", color: "#44617b", bg: "#eef4f8", Icon: HelpOutline}
 };
 
 export function SmartTopology({topology, height = 520}: {topology?: GraphSnapshot; height?: number}) {
@@ -56,7 +57,7 @@ export function SmartTopology({topology, height = 520}: {topology?: GraphSnapsho
           <Typography variant="caption" color="text.secondary" sx={{ml: "auto"}}>{resource.kind}</Typography>
         </Stack>
         <Typography noWrap sx={{fontWeight: 700}} title={resource.name}>{resource.name}</Typography>
-        <Typography variant="caption" color="text.secondary" noWrap>{state.stateText || "尚未评估"}</Typography>
+        <Typography variant="caption" color="text.secondary" noWrap>{state.stateText || "????"}</Typography>
       </Stack>}
     };
   }), [selectedUID, states, topology, visibleUIDs]);
@@ -75,41 +76,41 @@ export function SmartTopology({topology, height = 520}: {topology?: GraphSnapsho
 
   if (!topology?.nodes?.length) {
     return <Card variant="outlined"><CardContent>
-      <Typography color="text.secondary">当前没有可展示的拓扑数据。缺少关系不代表资源一定没有外部依赖。</Typography>
+      <Typography color="text.secondary">???????????????????????????????</Typography>
     </CardContent></Card>;
   }
   return <Stack spacing={1.5}>
     <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
-      {Object.entries(meta).filter(([key]) => ["critical", "warning", "affected", "healthy", "unknown"].includes(key))
+      {Object.entries(meta).filter(([key]) => ["critical", "warning", "affected", "healthy", "observed", "unknown"].includes(key))
         .map(([key, item]) => <Chip key={key} size="small" icon={<item.Icon />}
           label={item.label} sx={{color: item.color, bgcolor: item.bg, "& .MuiChip-icon": {color: item.color}}} />)}
       <Button size="small" variant={focusIssues ? "contained" : "outlined"} sx={{ml: "auto"}}
         onClick={() => setFocusIssues((value) => !value)}>
-        {focusIssues ? "显示完整局部图" : "只看故障链路"}
+        {focusIssues ? "???????" : "??????"}
       </Button>
     </Stack>
     <Box sx={{height, border: "1px solid", borderColor: "divider", borderRadius: 3, overflow: "hidden", bgcolor: "#fbfcfe"}}>
       <ReactFlow nodes={nodes} edges={edges} fitView minZoom={.35} maxZoom={1.5}
-        onNodeClick={(_, node) => setSelectedUID(node.id)} aria-label="资源健康拓扑图">
+        onNodeClick={(_, node) => setSelectedUID(node.id)} aria-label="???????">
         <Background gap={22} size={1} color="#e7e9ee" /><Controls />
       </ReactFlow>
     </Box>
     {selected ? <Card variant="outlined"><CardContent>
       <Stack direction={{xs: "column", md: "row"}} gap={2} alignItems={{md: "center"}}>
         <Box sx={{flex: 1}}>
-          <Typography variant="overline">所选资源</Typography>
+          <Typography variant="overline">????</Typography>
           <Typography variant="h6">{selected.resource.kind}/{selected.resource.name}</Typography>
           <Typography color="text.secondary">{selected.summary || selected.stateText}</Typography>
         </Box>
         <Divider orientation="vertical" flexItem />
-        <Typography sx={{fontWeight: 650}}>状态：{selected.stateText}</Typography>
+        <Typography sx={{fontWeight: 650}}>???{selected.stateText}</Typography>
       </Stack>
     </CardContent></Card> : null}
   </Stack>;
 }
 
 function fallbackState(resource: GraphSnapshot["nodes"][number]): TopologyNodeState {
-  return {resource, state: "unknown" as ResourceState, stateText: "尚未评估"};
+  return {resource, state: "unknown" as ResourceState, stateText: "????"};
 }
 
 function kindColumn(kind: string) {
@@ -123,7 +124,7 @@ function kindColumn(kind: string) {
 
 function relationLabel(value: string) {
   return ({
-    owns: "拥有", selects: "选择", "represented-by": "对应端点",
-    "scheduled-on": "调度到", mounts: "挂载"
+    owns: "??", selects: "??", "represented-by": "????",
+    "scheduled-on": "???", mounts: "??"
   } as Record<string, string>)[value] ?? value;
 }

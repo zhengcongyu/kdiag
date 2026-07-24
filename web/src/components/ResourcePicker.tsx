@@ -2,6 +2,7 @@ import {Alert, MenuItem, Skeleton, TextField} from "@mui/material";
 import {useQuery} from "@tanstack/react-query";
 import {api} from "../api";
 import type {InventoryResource} from "../types";
+import {useLanguage} from "../i18n";
 
 interface ResourcePickerProps {
   kind: string;
@@ -15,6 +16,7 @@ interface ResourcePickerProps {
 export function ResourcePicker({
   kind, namespace, label, value, disabled, onChange
 }: ResourcePickerProps) {
+  const {language} = useLanguage();
   const query = useQuery({
     queryKey: ["resource-options", kind, namespace ?? ""],
     queryFn: () => api.inventory({kind, namespace, limit: 500}),
@@ -23,10 +25,10 @@ export function ResourcePicker({
   });
 
   if (query.isLoading) {
-    return <Skeleton variant="rounded" height={56} aria-label={`${label}加载中`} />;
+    return <Skeleton variant="rounded" height={56} aria-label={`${label}???`} />;
   }
   if (query.error) {
-    return <Alert severity="error">无法读取{label}：{(query.error as Error).message}</Alert>;
+    return <Alert severity="error">{language === "zh-CN" ? `????${label}?` : `Unable to read ${label}: `}{(query.error as Error).message}</Alert>;
   }
 
   const items = query.data?.items ?? [];
@@ -38,13 +40,14 @@ export function ResourcePicker({
       label={label}
       value={value}
       disabled={disabled || items.length === 0}
-      helperText={items.length === 0 ? `当前集群没有匹配的 ${kind}` : `实时读取，共 ${items.length} 项`}
+      helperText={items.length === 0 ? (language === "zh-CN" ? `????????? ${kind}` : `No matching ${kind} resources`) :
+        (language === "zh-CN" ? `?????? ${items.length} ?` : `${items.length} live options`)}
       onChange={(event) => onChange(items.find((item) => item.ref.uid === event.target.value))}
       slotProps={{select: {"aria-label": label}}}
     >
       {items.map((item) => (
         <MenuItem key={item.ref.uid} value={item.ref.uid}>
-          {item.ref.name}{item.node ? ` · ${item.node}` : ""}
+          {item.ref.name}{item.node ? ` ? ${item.node}` : ""}
         </MenuItem>
       ))}
     </TextField>

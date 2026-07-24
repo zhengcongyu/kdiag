@@ -4,7 +4,7 @@ clusterName: local-k8s
 api:
   image:
     repository: ghcr.io/zhengcongyu/kdiag-api
-    tag: v0.3.1
+    tag: v0.4.0
   replicas: 1
   databaseSecret:
     name: ""
@@ -16,7 +16,7 @@ api:
 web:
   image:
     repository: ghcr.io/zhengcongyu/kdiag-web
-    tag: v0.3.1
+    tag: v0.4.0
   replicas: 1
   resources:
     requests: {cpu: 50m, memory: 64Mi}

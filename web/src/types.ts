@@ -142,7 +142,7 @@ export interface DiagnosisTask {
   finishedAt?: string;
 }
 
-export type ResourceState = "healthy" | "warning" | "critical" | "unknown";
+export type ResourceState = "healthy" | "warning" | "critical" | "unknown" | "observed";
 
 export interface ClusterConnection {
   name: string;
@@ -203,4 +203,28 @@ export interface ClusterOverview {
   facets: InventoryFacets;
   observedAt: string;
   coverage: {source: string; secrets: boolean; message: string};
+  access: AccessReport;
+}
+
+export interface AccessCheck {
+  kind: string;
+  group: string;
+  resource: string;
+  namespaced: boolean;
+  verbs: Record<"get" | "list" | "watch", boolean>;
+  allowed: boolean;
+  reason?: string;
+}
+
+export interface AccessReport {
+  status: "complete" | "partial" | "unavailable";
+  checkedAt?: string;
+  checks: AccessCheck[];
+  message: string;
+}
+
+export interface RBACManifest {
+  manifest: string;
+  command: string;
+  warning: string;
 }

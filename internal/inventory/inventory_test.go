@@ -46,13 +46,54 @@ func TestStoreSummarizesServiceEndpointsAndFilters(t *testing.T) {
 	}
 }
 
-func TestStoreDoesNotCallUnknownHealthy(t *testing.T) {
+func TestStoreDistinguishesObservedFromHealthy(t *testing.T) {
 	store := NewStore(Connection{Name: "test", Status: "connected"})
 	configMap := resource("cm-1", "ConfigMap", "default", "settings", map[string]any{}, nil)
 	store.Apply(collector.Change{Type: collector.Added, Resource: configMap})
-	result := store.List(Query{State: StateUnknown, Limit: 10})
-	if result.Total != 1 || result.Items[0].StateText != "未评估" {
-		t.Fatalf("unknown resource was not represented honestly: %#v", result)
+	result := store.List(Query{State: StateObserved, Limit: 10})
+	if result.Total != 1 || result.Items[0].StateText != "???" {
+		t.Fatalf("observed resource was not represented honestly: %#v", result)
+	}
+}
+
+func TestEveryCollectedKindHasAnExplicitState(t *testing.T) {
+	cases := []struct {
+		kind   string
+		spec   map[string]any
+		status map[string]any
+	}{
+		{"Namespace", nil, map[string]any{"phase": "Active"}},
+		{"Deployment", map[string]any{"replicas": 1}, map[string]any{"availableReplicas": 1}},
+		{"ReplicaSet", map[string]any{"replicas": 1}, map[string]any{"readyReplicas": 1}},
+		{"StatefulSet", map[string]any{"replicas": 1}, map[string]any{"availableReplicas": 1}},
+		{"DaemonSet", nil, map[string]any{"desiredNumberScheduled": 1, "numberAvailable": 1}},
+		{"Pod", nil, map[string]any{"phase": "Running", "containerStatuses": []any{map[string]any{"ready": true}}}},
+		{"Node", nil, map[string]any{"conditions": []any{map[string]any{"type": "Ready", "status": "True"}}}},
+		{"Service", map[string]any{"type": "ExternalName", "externalName": "example.com"}, nil},
+		{"EndpointSlice", map[string]any{"endpoints": []any{map[string]any{"conditions": map[string]any{"ready": true}}}}, nil},
+		{"Event", nil, nil},
+		{"ConfigMap", nil, nil},
+		{"PersistentVolumeClaim", nil, map[string]any{"phase": "Bound"}},
+		{"PersistentVolume", nil, map[string]any{"phase": "Available"}},
+		{"Job", map[string]any{"completions": 1}, map[string]any{"succeeded": 1}},
+		{"CronJob", nil, nil},
+		{"Ingress", nil, nil},
+		{"NetworkPolicy", nil, nil},
+		{"StorageClass", nil, nil},
+		{"HorizontalPodAutoscaler", nil, map[string]any{"currentReplicas": 1, "desiredReplicas": 1}},
+		{"PodDisruptionBudget", nil, map[string]any{"currentHealthy": 1, "desiredHealthy": 1}},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.kind, func(t *testing.T) {
+			store := NewStore(Connection{Name: "test", Status: "connected"})
+			store.Apply(collector.Change{Type: collector.Added, Resource: resource(
+				"uid-"+testCase.kind, testCase.kind, "default", "example", testCase.spec, testCase.status,
+			)})
+			result := store.List(Query{Limit: 10})
+			if result.Total != 1 || result.Items[0].State == "" || result.Items[0].StateText == "" {
+				t.Fatalf("%s did not expose an explicit state: %#v", testCase.kind, result)
+			}
+		})
 	}
 }
 

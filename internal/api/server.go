@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -39,7 +40,7 @@ type Server struct {
 }
 
 func New(repository repository.Repository, logger *slog.Logger) *Server {
-	return NewWithInventory(repository, logger, inventory.Disconnected("Kubernetes 数据源未配置"))
+	return NewWithInventory(repository, logger, inventory.Disconnected("Kubernetes ??????"))
 }
 
 func NewWithInventory(repository repository.Repository, logger *slog.Logger, resourceInventory inventory.Reader) *Server {
@@ -47,7 +48,7 @@ func NewWithInventory(repository repository.Repository, logger *slog.Logger, res
 		logger = slog.Default()
 	}
 	if resourceInventory == nil {
-		resourceInventory = inventory.Disconnected("Kubernetes 数据源未配置")
+		resourceInventory = inventory.Disconnected("Kubernetes ??????")
 	}
 	return &Server{
 		repository: repository, engine: diagnosis.New(rules.Catalog()),
@@ -64,6 +65,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /metrics", s.metrics)
 	mux.HandleFunc("GET /api/v1/clusters", s.clusters)
 	mux.HandleFunc("GET /api/v1/cluster/overview", s.clusterOverview)
+	mux.HandleFunc("GET /api/v1/access", s.accessReport)
+	mux.HandleFunc("GET /api/v1/access/rbac", s.accessRBAC)
 	mux.HandleFunc("GET /api/v1/inventory", s.inventoryList)
 	mux.HandleFunc("GET /api/v1/inventory/{uid}", s.inventoryItem)
 	mux.HandleFunc("GET /api/v1/incidents", s.incidents)
@@ -143,9 +146,79 @@ func (s *Server) clusterOverview(w http.ResponseWriter, _ *http.Request) {
 		"coverage": map[string]any{
 			"source":  "Kubernetes API Informer/List-Watch",
 			"secrets": false,
-			"message": "展示受支持的非敏感 Kubernetes 资源。未采集或未评估的数据会标记为未知，不会显示为健康。",
+			"message": "????????? Kubernetes ?????????????????????? observed?????????",
 		},
+		"access": s.inventory.Access(),
 	})
+}
+
+func (s *Server) accessReport(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.inventory.Access())
+}
+
+func (s *Server) accessRBAC(w http.ResponseWriter, _ *http.Request) {
+	namespace := safeDNSLabel(os.Getenv("POD_NAMESPACE"), "kdiag")
+	serviceAccount := safeDNSLabel(os.Getenv("KDIAG_SERVICE_ACCOUNT"), "kdiag-kdiag")
+	name := safeDNSLabel(os.Getenv("KDIAG_RBAC_NAME"), serviceAccount+"-reader")
+	manifest := fmt.Sprintf(`apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: %s
+rules:
+  - apiGroups: [""]
+    resources: [namespaces, pods, nodes, services, events, configmaps, persistentvolumeclaims, persistentvolumes]
+    verbs: [get, list, watch]
+  - apiGroups: ["apps"]
+    resources: [deployments, replicasets, statefulsets, daemonsets]
+    verbs: [get, list, watch]
+  - apiGroups: ["batch"]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch]
+  - apiGroups: ["discovery.k8s.io"]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+  - apiGroups: ["networking.k8s.io"]
+    resources: [networkpolicies, ingresses]
+    verbs: [get, list, watch]
+  - apiGroups: ["storage.k8s.io"]
+    resources: [storageclasses]
+    verbs: [get, list, watch]
+  - apiGroups: ["autoscaling"]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch]
+  - apiGroups: ["policy"]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: [selfsubjectaccessreviews]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: %s
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: %s
+subjects:
+  - kind: ServiceAccount
+    name: %s
+    namespace: %s
+`, name, name, name, serviceAccount, namespace)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"manifest": manifest,
+		"command":  "kubectl apply -f kdiag-readonly-rbac.yaml",
+		"warning":  "Review the manifest before applying it. KDiag never applies or escalates permissions automatically.",
+	})
+}
+
+func safeDNSLabel(value, fallback string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" || len(value) > 63 || !regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`).MatchString(value) {
+		return fallback
+	}
+	return value
 }
 
 func (s *Server) inventoryList(w http.ResponseWriter, r *http.Request) {
@@ -277,7 +350,7 @@ func (s *Server) createDiagnosis(w http.ResponseWriter, r *http.Request) {
 		}()
 		observation, observationErr := s.observations.Build(request.Target)
 		if observationErr != nil {
-			task.Status, task.Error = model.StatusFailed, "无法从实时 Kubernetes 缓存读取目标资源"
+			task.Status, task.Error = model.StatusFailed, "????? Kubernetes ????????"
 			s.hub.publish(task.ID, diagnosis.Event{Type: "diagnosis_failed", Data: task.Error})
 			persistCtx, persistCancel := context.WithTimeout(baseCtx, 5*time.Second)
 			defer persistCancel()
@@ -346,7 +419,7 @@ func (s *Server) createNetworkDiagnosis(w http.ResponseWriter, r *http.Request) 
 		s.hub.publish(task.ID, diagnosis.Event{Type: "task_started", Data: task})
 		snapshot, snapshotErr := s.observations.BuildNetwork(request.Request)
 		if snapshotErr != nil {
-			task.Status, task.Error = model.StatusFailed, "无法从实时 Kubernetes 缓存构建网络快照"
+			task.Status, task.Error = model.StatusFailed, "????? Kubernetes ????????"
 			s.hub.publish(task.ID, diagnosis.Event{Type: "diagnosis_failed", Data: task.Error})
 			return
 		}

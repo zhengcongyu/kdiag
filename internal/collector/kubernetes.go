@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -43,6 +44,29 @@ var watchedResources = map[string]schema.GroupVersionResource{
 	},
 }
 
+type WatchedResource struct {
+	Kind       string `json:"kind"`
+	Group      string `json:"group"`
+	Version    string `json:"version"`
+	Resource   string `json:"resource"`
+	Namespaced bool   `json:"namespaced"`
+}
+
+func WatchedResources() []WatchedResource {
+	clusterScoped := map[string]bool{
+		"Namespace": true, "Node": true, "PersistentVolume": true, "StorageClass": true,
+	}
+	result := make([]WatchedResource, 0, len(watchedResources))
+	for kind, gvr := range watchedResources {
+		result = append(result, WatchedResource{
+			Kind: kind, Group: gvr.Group, Version: gvr.Version,
+			Resource: gvr.Resource, Namespaced: !clusterScoped[kind],
+		})
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Kind < result[j].Kind })
+	return result
+}
+
 // KubernetesCollector uses client-go shared informers. List-Watch restart,
 // resourceVersion tracking, and reconnect backoff are provided by client-go.
 type KubernetesCollector struct {
@@ -53,6 +77,10 @@ type KubernetesCollector struct {
 }
 
 func NewKubernetes(cluster string, client dynamic.Interface, resync time.Duration) *KubernetesCollector {
+	return NewKubernetesForKinds(cluster, client, resync, nil)
+}
+
+func NewKubernetesForKinds(cluster string, client dynamic.Interface, resync time.Duration, allowedKinds map[string]bool) *KubernetesCollector {
 	factory := dynamicinformer.NewDynamicSharedInformerFactory(client, resync)
 	collector := &KubernetesCollector{
 		cluster: cluster,
@@ -60,6 +88,9 @@ func NewKubernetes(cluster string, client dynamic.Interface, resync time.Duratio
 		changes: make(chan Change, 4096),
 	}
 	for kind, gvr := range watchedResources {
+		if allowedKinds != nil && !allowedKinds[kind] {
+			continue
+		}
 		informer := factory.ForResource(gvr).Informer()
 		kindCopy := kind
 		_, _ = informer.AddEventHandler(cache.ResourceEventHandlerFuncs{

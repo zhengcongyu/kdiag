@@ -171,3 +171,51 @@ func TestLiveInventoryAPI(t *testing.T) {
 		t.Fatalf("unexpected detail status: %s", detail.Status)
 	}
 }
+
+func TestAccessReportAndManualReadOnlyRBAC(t *testing.T) {
+	t.Setenv("POD_NAMESPACE", "kdiag")
+	t.Setenv("KDIAG_SERVICE_ACCOUNT", "kdiag-api")
+	repo := repository.NewMemory()
+	store := inventory.NewStore(inventory.Connection{Name: "local-k8s", Status: "connected"})
+	store.SetAccess(inventory.AccessReport{
+		Status: "partial", Checks: []inventory.AccessCheck{{
+			Kind: "Pod", Resource: "pods", Namespaced: true,
+			Verbs: map[string]bool{"get": true, "list": false, "watch": false},
+		}},
+	})
+	server := httptest.NewServer(NewWithInventory(repo, slog.New(slog.NewTextHandler(io.Discard, nil)), store).Handler())
+	defer server.Close()
+
+	response, err := http.Get(server.URL + "/api/v1/access")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var access inventory.AccessReport
+	if err := json.NewDecoder(response.Body).Decode(&access); err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if access.Status != "partial" || len(access.Checks) != 1 {
+		t.Fatalf("unexpected access report: %#v", access)
+	}
+
+	response, err = http.Get(server.URL + "/api/v1/access/rbac")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var generated struct {
+		Manifest string `json:"manifest"`
+		Command  string `json:"command"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&generated); err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if !strings.Contains(generated.Manifest, "verbs: [get, list, watch]") ||
+		!strings.Contains(generated.Manifest, "name: kdiag-api") ||
+		strings.Contains(generated.Manifest, "resources: [secrets") ||
+		strings.Contains(generated.Manifest, "delete") ||
+		strings.Contains(generated.Manifest, "patch") {
+		t.Fatalf("generated RBAC was not safely read-only:\n%s", generated.Manifest)
+	}
+}
