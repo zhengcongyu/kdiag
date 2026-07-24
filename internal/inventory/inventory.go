@@ -398,7 +398,6 @@ func directRelations(resource model.Resource, resources []model.Resource) []Rela
 }
 
 func summarize(resource model.Resource, all []model.Resource) (state, text, ready, node, ip, summary string) {
-	state, text = StateUnknown, "未知"
 	spec, status := rawMap(resource.Spec), rawMap(resource.Status)
 	switch resource.Ref.Kind {
 	case "Node":
