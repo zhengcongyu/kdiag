@@ -4,6 +4,15 @@ All notable changes are documented here. The format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-07-25
+
+### Fixed
+
+- Prevent a cached SPA HTML shell from referencing JavaScript assets removed by
+  a later rollout and rendering a blank page.
+- Return `404` for missing hashed assets instead of serving `index.html` with
+  the wrong content type.
+
 ## [0.4.1] - 2026-07-25
 
 ### Fixed

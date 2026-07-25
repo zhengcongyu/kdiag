@@ -84,7 +84,7 @@ export function AppShell() {
             <MenuItem value="zh-CN">{t("chinese")}</MenuItem>
             <MenuItem value="en">{t("english")}</MenuItem>
           </Select>
-          <Typography variant="caption" color="text.secondary">KDiag v0.4.1</Typography>
+          <Typography variant="caption" color="text.secondary">KDiag v0.4.2</Typography>
         </Box>
       </Box>
       <Box component="main" sx={{ml: "188px", minWidth: 0, width: "calc(100% - 188px)"}}>

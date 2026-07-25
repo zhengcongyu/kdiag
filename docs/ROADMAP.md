@@ -2,6 +2,12 @@
 
 Status legend: ✅ verified, 🟡 implemented but environment-limited verification, ⬜ planned.
 
+## v0.4.2 — Web rollout cache safety
+
+- [x] Disable caching for the SPA HTML shell and client-side routes.
+- [x] Cache content-hashed assets immutably and return 404 for missing assets.
+- [x] Verify the response headers and a clean browser load after rollout.
+
 ## v0.4.1 — Release integrity hotfix
 
 - [x] Preserve UTF-8 source text when publishing through the Git Data API.
