@@ -16,7 +16,8 @@ export function NamespacePicker({value, disabled, onChange}: NamespacePickerProp
     queryFn: api.clusterOverview,
     refetchInterval: 15_000
   });
-  if (query.isLoading) return <Skeleton variant="rounded" height={56} aria-label="Namespace 加载中" />;
+  if (query.isLoading) return <Skeleton variant="rounded" height={56}
+    aria-label={language === "zh-CN" ? "Namespace 加载中" : "Loading Namespaces"} />;
   if (query.error) return <Alert severity="error">{language === "zh-CN" ? "无法读取 Namespace：" : "Unable to read Namespaces: "}{(query.error as Error).message}</Alert>;
   const namespaces = query.data?.facets.namespaces ?? [];
   return (

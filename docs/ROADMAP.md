@@ -2,6 +2,14 @@
 
 Status legend: ✅ verified, 🟡 implemented but environment-limited verification, ⬜ planned.
 
+## v0.5.0 — Explicit resource health and complete English UI
+
+- [x] Remove the ambiguous collected/observed state from the API and console.
+- [x] Give every inventory resource a healthy, warning, critical, or unknown result.
+- [x] Evaluate declarative configuration resources without overstating runtime health.
+- [x] Localize the complete primary workflow and resource health explanations.
+- [x] Add regression coverage for English-only main content.
+
 ## v0.4.2 — Web rollout cache safety
 
 - [x] Disable caching for the SPA HTML shell and client-side routes.

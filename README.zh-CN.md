@@ -4,7 +4,7 @@ KDiag 是一个开源的 Kubernetes 可解释故障诊断、网络排障与变�
 它把重复异常聚合成 Incident，并明确展示：发生了什么、影响范围、候选根因、
 支持/冲突/缺失证据、定位过程、安全修复建议和修复后验证方案。
 
-> 当前发布线：v0.4.2。Go、前端以及环境相关的 Compose、PostgreSQL、kind
+> 当前发布线：v0.5.0。Go、前端以及环境相关的 Compose、PostgreSQL、kind
 > 验证结果会分别记录，不会仅凭代码存在便宣称已经通过。
 
 [Roadmap](docs/ROADMAP.md) · [架构](docs/architecture/overview.md) ·

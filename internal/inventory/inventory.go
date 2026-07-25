@@ -29,7 +29,6 @@ const (
 	StateWarning  = "warning"
 	StateCritical = "critical"
 	StateUnknown  = "unknown"
-	StateObserved = "observed"
 )
 
 type AccessCheck struct {
@@ -503,7 +502,7 @@ func summarize(resource model.Resource, all []model.Resource) (state, text, read
 		if phase == "Terminating" {
 			return StateWarning, "Terminating", "0/1", "", "", "Namespace deletion is in progress"
 		}
-		return StateObserved, valueOr(phase, "Observed"), "", "", "", "Namespace was collected; Kubernetes did not provide a standard health condition"
+		return StateUnknown, valueOr(phase, "Unknown"), "", "", "", "Namespace phase is missing or not recognized"
 	case "Node":
 		for _, condition := range nestedSlice(status, "conditions") {
 			if stringValue(condition["type"]) == "Ready" {
@@ -628,33 +627,48 @@ func summarize(resource model.Resource, all []model.Resource) (state, text, read
 		}
 		return StateWarning, "运行中", ready, "", "", "Job 尚未完成"
 	case "ConfigMap":
-		return StateObserved, "已采集", "", "", "", "配置对象已采集；ConfigMap 本身没有通用健康 Condition"
+		return StateHealthy, "配置有效", "1/1", "", "", "ConfigMap 已通过 Kubernetes API 校验并且可以读取"
 	case "CronJob":
 		if suspended, _ := spec["suspend"].(bool); suspended {
-			return StateObserved, "已暂停", "", "", "", "CronJob 已由用户暂停"
+			return StateHealthy, "按配置暂停", "1/1", "", "", "CronJob 已按用户配置暂停，不属于运行故障"
 		}
 		active := len(nestedSlice(status, "active"))
 		if active > 0 {
 			return StateHealthy, "任务运行中", fmt.Sprintf("%d active", active), "", "", "CronJob 当前有活动 Job"
 		}
-		return StateObserved, "计划已加载", "", "", "", "CronJob 计划已采集；当前没有活动 Job"
+		if strings.TrimSpace(stringValue(spec["schedule"])) == "" {
+			return StateCritical, "缺少调度计划", "0/1", "", "", "CronJob 未声明有效的 schedule"
+		}
+		return StateHealthy, "调度计划有效", "1/1", "", "", "CronJob 调度计划已通过 Kubernetes API 校验，当前无需活动 Job"
 	case "Ingress":
 		addresses := nestedSlice(status, "loadBalancer", "ingress")
 		if len(addresses) > 0 {
 			return StateHealthy, "地址已分配", fmt.Sprintf("%d", len(addresses)), "", "", "Ingress 已获得负载均衡地址"
 		}
-		return StateObserved, "配置已采集", "", "", "", "Ingress 已采集；部分控制器不会写入标准地址状态"
+		if len(nestedSlice(spec, "rules")) == 0 && nestedMap(spec, "defaultBackend") == nil {
+			return StateCritical, "没有路由规则", "0/1", "", "", "Ingress 没有 rules 或 defaultBackend"
+		}
+		return StateWarning, "入口状态未确认", "0/1", "", "", "Ingress 配置有效，但控制器尚未报告负载均衡地址；请确认 IngressClass 和控制器状态"
 	case "NetworkPolicy":
-		return StateObserved, "策略已采集", "", "", "", "NetworkPolicy 是声明式策略；缺少 CNI 流量证据时不能判定实际连通性"
+		if nestedMap(spec, "podSelector") == nil {
+			return StateCritical, "缺少 Pod 选择器", "0/1", "", "", "NetworkPolicy 缺少 podSelector"
+		}
+		return StateHealthy, "策略结构有效", "1/1", "", "", "NetworkPolicy 已通过 Kubernetes API 结构校验；实际流量仍需 CNI 或主动探测证据验证"
 	case "StorageClass":
-		return StateObserved, "配置已采集", "", "", "", "StorageClass 没有通用运行时健康 Condition"
+		if strings.TrimSpace(stringValue(spec["provisioner"])) == "" {
+			return StateCritical, "缺少供应器", "0/1", "", "", "StorageClass 未声明 provisioner"
+		}
+		return StateHealthy, "配置有效", "1/1", "", "", "StorageClass 已声明 provisioner 并通过 Kubernetes API 校验"
 	case "HorizontalPodAutoscaler":
 		current, desired := intValue(status["currentReplicas"]), intValue(status["desiredReplicas"])
 		ready = fmt.Sprintf("%d/%d", current, desired)
 		if conditionState, conditionText, ok := summarizeConditions(status); ok {
 			return conditionState, conditionText, ready, "", "", "基于 HPA 结构化 Condition 汇总"
 		}
-		return StateObserved, "状态已采集", ready, "", "", "HPA 状态已采集，但缺少可判定的 Condition"
+		if desired > 0 && current > 0 {
+			return StateHealthy, "副本目标有效", ready, "", "", "HPA 已报告当前和期望副本数，但缺少 Condition，指标获取能力仍需单独确认"
+		}
+		return StateUnknown, "缺少伸缩状态", ready, "", "", "HPA 没有可判定的 Condition 或有效副本状态"
 	case "PodDisruptionBudget":
 		current, desired := intValue(status["currentHealthy"]), intValue(status["desiredHealthy"])
 		ready = fmt.Sprintf("%d/%d", current, desired)
@@ -673,7 +687,7 @@ func summarize(resource model.Resource, all []model.Resource) (state, text, read
 		if conditionState, conditionText, ok := summarizeConditions(status); ok {
 			return conditionState, conditionText, "", "", "", "基于结构化 Condition 汇总"
 		}
-		return StateObserved, "已采集", "", "", "", "资源已成功采集，但此类型没有通用健康判定；详细字段仍可查看"
+		return StateUnknown, "无法确认健康状态", "", "", "", "此资源类型没有可用的结构化健康信号"
 	}
 }
 
@@ -766,10 +780,8 @@ func severityRank(state string) int {
 		return 1
 	case StateUnknown:
 		return 2
-	case StateObserved:
-		return 3
 	default:
-		return 4
+		return 3
 	}
 }
 

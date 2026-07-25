@@ -19,6 +19,7 @@ import type {InventoryResource} from "../types";
 import {useLanguage} from "../i18n";
 
 export function PolicyPage() {
+  const {l, localize} = useLanguage();
   const policies = useQuery({
     queryKey: ["policy-inventory"],
     queryFn: async () => {
@@ -33,19 +34,28 @@ export function PolicyPage() {
   if (policies.isLoading) return <LoadingState />;
   if (policies.error) return <ErrorState error={policies.error} />;
   const items = policies.data ?? [];
-  return <Page title="策略与告警" subtitle="只读展示集群中的 NetworkPolicy 与 PodDisruptionBudget；不会自动修改生产资源。">
-    <Alert severity="info" icon={<SecurityOutlined />}>告警来自结构化资源状态；未知或未覆盖的数据不会显示为正常。</Alert>
+  return <Page title={l("策略与告警", "Policies & Alerts")}
+    subtitle={l("只读展示集群中的 NetworkPolicy 与 PodDisruptionBudget；不会自动修改生产资源。",
+      "Read-only view of NetworkPolicies and PodDisruptionBudgets. KDiag never mutates production resources.")}>
+    <Alert severity="info" icon={<SecurityOutlined />}>{l(
+      "告警来自结构化资源状态；未知或未覆盖的数据不会显示为正常。",
+      "Alerts are based on structured resource state. Unknown or uncovered data is never shown as healthy."
+    )}</Alert>
     <Stack direction="row" gap={1} flexWrap="wrap">
       <Chip label={`NetworkPolicy ${items.filter((item) => item.ref.kind === "NetworkPolicy").length}`} />
       <Chip label={`PodDisruptionBudget ${items.filter((item) => item.ref.kind === "PodDisruptionBudget").length}`} />
-      <Chip color="warning" label={`需关注 ${items.filter((item) => item.state !== "healthy").length}`} />
+      <Chip color="warning" label={`${l("需关注", "Needs attention")} ${items.filter((item) => item.state !== "healthy").length}`} />
     </Stack>
-    {items.length === 0 ? <EmptyState title="没有发现策略资源" detail="Informer 已同步，但当前集群未创建 NetworkPolicy 或 PodDisruptionBudget。" /> :
-      <Stack spacing={1.25}>{items.map((item) => <ResourceSummary key={item.ref.uid} item={item} />)}</Stack>}
+    {items.length === 0 ? <EmptyState title={l("没有发现策略资源", "No policy resources found")}
+      detail={l("Informer 已同步，但当前集群未创建 NetworkPolicy 或 PodDisruptionBudget。",
+        "The informer is synced, but the cluster has no NetworkPolicy or PodDisruptionBudget resources.")} /> :
+      <Stack spacing={1.25}>{items.map((item) => <ResourceSummary key={item.ref.uid} item={item}
+        stateText={localize(item.stateText)} summary={localize(item.summary)} />)}</Stack>}
   </Page>;
 }
 
 export function ReportsPage() {
+  const {l, localize} = useLanguage();
   const incidents = useQuery({queryKey: ["incidents"], queryFn: api.incidents, refetchInterval: 15_000});
   const diagnoses = useQuery({queryKey: ["diagnoses"], queryFn: () => api.diagnoses(), refetchInterval: 15_000});
   if (incidents.isLoading || diagnoses.isLoading) return <LoadingState />;
@@ -58,11 +68,11 @@ export function ReportsPage() {
       ? JSON.stringify({exportedAt: new Date().toISOString(), incidents: items, diagnoses: tasks}, null, 2)
       : tasks.map((task) => [
         `# ${task.report?.headline ?? `${task.target.kind}/${task.target.name}`}`,
-        "", task.report?.summary ?? "诊断尚未生成报告",
-        "", `- 结论：${task.report?.verdict ?? task.status}`,
-        `- 影响：${task.report?.impact ?? "尚未确认"}`,
-        `- 根因：${task.report?.rootCause ?? "尚未确认"}`,
-        "", "## 修复建议", ...(task.report?.remediation ?? []).map((value) => `- ${value}`)
+        "", localize(task.report?.summary) || l("诊断尚未生成报告", "The diagnosis report is not ready."),
+        "", `- ${l("结论", "Verdict")}: ${task.report?.verdict ?? task.status}`,
+        `- ${l("影响", "Impact")}: ${localize(task.report?.impact) || l("尚未确认", "Unconfirmed")}`,
+        `- ${l("根因", "Root cause")}: ${localize(task.report?.rootCause) || l("尚未确认", "Unconfirmed")}`,
+        "", `## ${l("修复建议", "Remediation")}`, ...(task.report?.remediation ?? []).map((value) => `- ${localize(value)}`)
       ].join("\n")).join("\n\n---\n\n");
     const blob = new Blob([content],
       {type: "application/json"});
@@ -73,19 +83,25 @@ export function ReportsPage() {
     link.click();
     URL.revokeObjectURL(url);
   }
-  return <Page title="诊断报告中心" subtitle="普通用户先看结论，技术人员可进入报告查看完整证据、规则和原始数据。">
+  return <Page title={l("诊断报告中心", "Diagnosis Reports")}
+    subtitle={l("普通用户先看结论，技术人员可进入报告查看完整证据、规则和原始数据。",
+      "Start with the verdict, then open the technical report for evidence, rules, and raw data.")}>
     <Stack direction="row" justifyContent="space-between" alignItems="center">
       <Stack direction="row" gap={1}>
-        <Chip label={`诊断报告 ${tasks.length}`} />
+        <Chip label={`${l("诊断报告", "Reports")} ${tasks.length}`} />
         <Chip label={`Incident ${items.length}`} />
-        <Chip color="error" label={`未解决 ${items.filter((item) => item.status !== "resolved").length}`} />
+        <Chip color="error" label={`${l("未解决", "Unresolved")} ${items.filter((item) => item.status !== "resolved").length}`} />
       </Stack>
       <Stack direction="row" gap={1}>
-        <Button variant="outlined" startIcon={<DownloadOutlined />} onClick={() => exportReports("markdown")} disabled={!tasks.length}>导出 Markdown</Button>
-        <Button variant="outlined" onClick={() => exportReports("json")} disabled={!tasks.length && !items.length}>导出 JSON</Button>
+        <Button variant="outlined" startIcon={<DownloadOutlined />} onClick={() => exportReports("markdown")} disabled={!tasks.length}>
+          {l("导出 Markdown", "Export Markdown")}</Button>
+        <Button variant="outlined" onClick={() => exportReports("json")} disabled={!tasks.length && !items.length}>
+          {l("导出 JSON", "Export JSON")}</Button>
       </Stack>
     </Stack>
-    {tasks.length === 0 ? <EmptyState title="还没有诊断报告" detail="运行资源诊断或网络路径诊断后，报告会保存在这里。" /> :
+    {tasks.length === 0 ? <EmptyState title={l("还没有诊断报告", "No diagnosis reports yet")}
+      detail={l("运行资源诊断或网络路径诊断后，报告会保存在这里。",
+        "Resource and network diagnosis reports will be saved here.")} /> :
       <Stack spacing={1.25}>{tasks.map((task) => <Card variant="outlined" key={task.id}><CardContent>
         <Stack direction={{xs: "column", md: "row"}} justifyContent="space-between" gap={2}>
           <Box>
@@ -94,13 +110,13 @@ export function ReportsPage() {
               <Chip size="small" label={task.report?.verdict ?? task.status}
                 color={task.report?.verdict === "CONFIRMED_ISSUE" ? "error" : "default"} />
             </Stack>
-            <Typography color="text.secondary">{task.report?.summary ?? "报告正在生成"}</Typography>
+            <Typography color="text.secondary">{localize(task.report?.summary) || l("报告正在生成", "Generating report")}</Typography>
           </Box>
           <Stack direction="row" gap={1} alignItems="center">
-            <Chip size="small" label={`问题 ${task.report?.confirmedIssues.length ?? 0}`} />
-            <Chip size="small" label={`未验证 ${task.report?.unknownChecks.length ?? 0}`} />
+            <Chip size="small" label={`${l("问题", "Issues")} ${task.report?.confirmedIssues.length ?? 0}`} />
+            <Chip size="small" label={`${l("未验证", "Unverified")} ${task.report?.unknownChecks.length ?? 0}`} />
             <Button component={Link} to={`/${task.kind === "network" ? "network" : "diagnose"}/${encodeURIComponent(task.id)}`}
-              size="small" variant="outlined">查看报告</Button>
+              size="small" variant="outlined">{l("查看报告", "View report")}</Button>
           </Stack>
         </Stack>
       </CardContent></Card>)}</Stack>}
@@ -108,6 +124,7 @@ export function ReportsPage() {
 }
 
 export function TopologyPage() {
+  const {l} = useLanguage();
   const overview = useQuery({queryKey: ["cluster-overview"], queryFn: api.clusterOverview, refetchInterval: 15_000});
   const [namespace, setNamespace] = useState("");
   const [kind, setKind] = useState("Service");
@@ -127,29 +144,34 @@ export function TopologyPage() {
     queryFn: () => api.topology(resource!.ref.uid, depth, direction),
     enabled: Boolean(resource), refetchInterval: 15_000
   });
-  return <Page title="智能资源拓扑" subtitle="以所选资源为中心展示上下游、健康状态和故障传播路径。">
+  return <Page title={l("智能资源拓扑", "Smart Resource Topology")}
+    subtitle={l("以所选资源为中心展示上下游、健康状态和故障传播路径。",
+      "Explore upstream and downstream resources, health, and failure propagation around the selected resource.")}>
     <Card><CardContent><Stack spacing={2}>
       <NamespacePicker value={namespace} onChange={(value) => {setNamespace(value); setResource(undefined);}} />
-      <TextField select label="资源类型" value={kind}
+      <TextField select label={l("资源类型", "Resource kind")} value={kind}
         onChange={(event) => {setKind(event.target.value); setResource(undefined);}}>
         {(kinds.length ? kinds : ["Service", "Deployment", "Pod"]).map((value) =>
           <MenuItem key={value} value={value}>{value}</MenuItem>)}
       </TextField>
-      <ResourcePicker kind={kind} namespace={namespace} label="拓扑中心资源"
+      <ResourcePicker kind={kind} namespace={namespace} label={l("拓扑中心资源", "Topology root")}
         value={resource?.ref.uid ?? ""} onChange={setResource} />
       <Stack direction={{xs: "column", md: "row"}} gap={1.5}>
-        <TextField select label="展开层数" value={depth} sx={{minWidth: 160}}
+        <TextField select label={l("展开层数", "Depth")} value={depth} sx={{minWidth: 160}}
           onChange={(event) => setDepth(Number(event.target.value))}>
-          {[1, 2, 3, 4].map((value) => <MenuItem key={value} value={value}>{value} 层</MenuItem>)}
+          {[1, 2, 3, 4].map((value) => <MenuItem key={value} value={value}>{value} {l("层", "levels")}</MenuItem>)}
         </TextField>
-        <TextField select label="关系方向" value={direction} sx={{minWidth: 180}}
+        <TextField select label={l("关系方向", "Direction")} value={direction} sx={{minWidth: 180}}
           onChange={(event) => setDirection(event.target.value)}>
-          <MenuItem value="both">上下游</MenuItem><MenuItem value="upstream">只看上游</MenuItem>
-          <MenuItem value="downstream">只看下游</MenuItem>
+          <MenuItem value="both">{l("上下游", "Both")}</MenuItem>
+          <MenuItem value="upstream">{l("只看上游", "Upstream only")}</MenuItem>
+          <MenuItem value="downstream">{l("只看下游", "Downstream only")}</MenuItem>
         </TextField>
       </Stack>
     </Stack></CardContent></Card>
-    {!resource ? <EmptyState title="请选择一个资源" detail="资源名称全部来自当前集群，不支持手工输入。" /> : null}
+    {!resource ? <EmptyState title={l("请选择一个资源", "Select a resource")}
+      detail={l("资源名称全部来自当前集群，不支持手工输入。",
+        "Resource names are loaded from the live cluster and cannot be entered manually.")} /> : null}
     {topology.isLoading ? <LoadingState /> : null}
     {topology.error ? <ErrorState error={topology.error} /> : null}
     {topology.data ? <SmartTopology topology={topology.data} /> : null}
@@ -157,7 +179,7 @@ export function TopologyPage() {
 }
 
 export function SettingsPage() {
-  const {language, t} = useLanguage();
+  const {language, t, l} = useLanguage();
   const overview = useQuery({queryKey: ["cluster-overview"], queryFn: api.clusterOverview, refetchInterval: 15_000});
   const rbac = useMutation({mutationFn: api.accessRBAC});
   if (overview.isLoading) return <LoadingState />;
@@ -186,14 +208,14 @@ export function SettingsPage() {
         t("cacheSync", {value: syncAge == null ? t("notAvailable") : t("secondsAgo", {value: Math.round(syncAge / 1000)})})
       ]} />
       <InfoCard title={t("securityBoundary")} lines={[
-        t("secretContent", {value: data.coverage.secrets ? t("observed") : t("notCollected")}),
+        t("secretContent", {value: data.coverage.secrets ? l("允许", "Allowed") : t("notCollected")}),
         t("readOnlyPermission"),
         t("activeProbeOff")
       ]} />
       <InfoCard title={t("capabilityCoverage")} lines={[
         t("discoveredKinds", {value: Object.keys(data.facets.kinds).length}),
         t("namespaces", {value: data.facets.namespaces.length}),
-        t("observedCount", {value: data.facets.states.observed ?? 0})
+        t("unknownCount", {value: data.facets.states.unknown ?? 0})
       ]} />
     </Stack>
     <Card variant="outlined"><CardContent>
@@ -252,7 +274,10 @@ export function SettingsPage() {
       </Box> : null}
       {rbac.error ? <Alert severity="error" sx={{mt: 2}}>{String(rbac.error)}</Alert> : null}
     </CardContent></Card>
-    <Alert severity="warning">当前 NodePort 实验部署未内置身份认证。生产环境应使用 HTTPS 与身份认证代理，并恢复适配入口方式的 NetworkPolicy。</Alert>
+    <Alert severity="warning">{l(
+      "当前 NodePort 实验部署未内置身份认证。生产环境应使用 HTTPS 与身份认证代理，并恢复适配入口方式的 NetworkPolicy。",
+      "This NodePort lab deployment has no built-in authentication. Production deployments should use HTTPS, an authentication proxy, and an ingress-appropriate NetworkPolicy."
+    )}</Alert>
   </Page>;
 }
 
@@ -263,15 +288,19 @@ function Page({title, subtitle, children}: {title: string; subtitle: string; chi
   </Stack>;
 }
 
-function ResourceSummary({item}: {item: InventoryResource}) {
+function ResourceSummary({item, stateText, summary}: {
+  item: InventoryResource; stateText?: string; summary?: string;
+}) {
+  const {l} = useLanguage();
   return <Card variant="outlined"><CardContent>
     <Stack direction={{xs: "column", md: "row"}} gap={2} alignItems={{md: "center"}}>
       <PolicyOutlined color="action" />
       <Box sx={{flex: 1}}>
         <Typography sx={{fontWeight: 650}}>{item.ref.kind}/{item.ref.name}</Typography>
-        <Typography variant="body2" color="text.secondary">{item.ref.namespace || "集群级"} · {item.summary}</Typography>
+        <Typography variant="body2" color="text.secondary">{item.ref.namespace || l("集群级", "Cluster-scoped")} · {summary ?? item.summary}</Typography>
       </Box>
-      <Chip size="small" label={item.stateText} color={item.state === "healthy" ? "success" : item.state === "critical" ? "error" : "warning"} />
+      <Chip size="small" label={stateText ?? item.stateText}
+        color={item.state === "healthy" ? "success" : item.state === "critical" ? "error" : "warning"} />
     </Stack>
   </CardContent></Card>;
 }

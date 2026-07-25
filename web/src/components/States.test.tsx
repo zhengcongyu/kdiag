@@ -10,7 +10,7 @@ test("explains an API failure and provides read-only troubleshooting commands", 
 
   expect(screen.getByText("KDiag API 处理请求失败")).toBeInTheDocument();
   expect(screen.getByText(/KDiag API → Kubernetes/)).toBeInTheDocument();
-  expect(screen.getByText(/Request ID：req-123/)).toBeInTheDocument();
+  expect(screen.getByText(/Request ID: req-123/)).toBeInTheDocument();
 
   fireEvent.click(screen.getByText("查看排错指引和建议命令"));
   expect(screen.getByText(/kubectl -n kdiag get pods/)).toBeInTheDocument();

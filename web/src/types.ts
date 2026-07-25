@@ -142,7 +142,7 @@ export interface DiagnosisTask {
   finishedAt?: string;
 }
 
-export type ResourceState = "healthy" | "warning" | "critical" | "unknown" | "observed";
+export type ResourceState = "healthy" | "warning" | "critical" | "unknown";
 
 export interface ClusterConnection {
   name: string;

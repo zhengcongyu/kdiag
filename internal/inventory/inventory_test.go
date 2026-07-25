@@ -46,13 +46,13 @@ func TestStoreSummarizesServiceEndpointsAndFilters(t *testing.T) {
 	}
 }
 
-func TestStoreDistinguishesObservedFromHealthy(t *testing.T) {
+func TestStoreEvaluatesConfigMapHealth(t *testing.T) {
 	store := NewStore(Connection{Name: "test", Status: "connected"})
 	configMap := resource("cm-1", "ConfigMap", "default", "settings", map[string]any{}, nil)
 	store.Apply(collector.Change{Type: collector.Added, Resource: configMap})
-	result := store.List(Query{State: StateObserved, Limit: 10})
-	if result.Total != 1 || result.Items[0].StateText != "已采集" {
-		t.Fatalf("observed resource was not represented honestly: %#v", result)
+	result := store.List(Query{State: StateHealthy, Limit: 10})
+	if result.Total != 1 || result.Items[0].StateText != "配置有效" {
+		t.Fatalf("ConfigMap health was not evaluated: %#v", result)
 	}
 }
 
@@ -76,10 +76,10 @@ func TestEveryCollectedKindHasAnExplicitState(t *testing.T) {
 		{"PersistentVolumeClaim", nil, map[string]any{"phase": "Bound"}},
 		{"PersistentVolume", nil, map[string]any{"phase": "Available"}},
 		{"Job", map[string]any{"completions": 1}, map[string]any{"succeeded": 1}},
-		{"CronJob", nil, nil},
-		{"Ingress", nil, nil},
-		{"NetworkPolicy", nil, nil},
-		{"StorageClass", nil, nil},
+		{"CronJob", map[string]any{"schedule": "*/5 * * * *"}, nil},
+		{"Ingress", map[string]any{"rules": []any{map[string]any{"host": "example.test"}}}, nil},
+		{"NetworkPolicy", map[string]any{"podSelector": map[string]any{}}, nil},
+		{"StorageClass", map[string]any{"provisioner": "example.test/csi"}, nil},
 		{"HorizontalPodAutoscaler", nil, map[string]any{"currentReplicas": 1, "desiredReplicas": 1}},
 		{"PodDisruptionBudget", nil, map[string]any{"currentHealthy": 1, "desiredHealthy": 1}},
 	}
@@ -92,6 +92,9 @@ func TestEveryCollectedKindHasAnExplicitState(t *testing.T) {
 			result := store.List(Query{Limit: 10})
 			if result.Total != 1 || result.Items[0].State == "" || result.Items[0].StateText == "" {
 				t.Fatalf("%s did not expose an explicit state: %#v", testCase.kind, result)
+			}
+			if result.Items[0].State == "observed" || result.Items[0].StateText == "已采集" {
+				t.Fatalf("%s still exposes a collection state instead of health: %#v", testCase.kind, result)
 			}
 		})
 	}

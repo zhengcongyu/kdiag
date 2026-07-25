@@ -25,7 +25,8 @@ export function ResourcePicker({
   });
 
   if (query.isLoading) {
-    return <Skeleton variant="rounded" height={56} aria-label={`${label}加载中`} />;
+    return <Skeleton variant="rounded" height={56}
+      aria-label={language === "zh-CN" ? `${label}加载中` : `Loading ${label}`} />;
   }
   if (query.error) {
     return <Alert severity="error">{language === "zh-CN" ? `无法读取${label}：` : `Unable to read ${label}: `}{(query.error as Error).message}</Alert>;

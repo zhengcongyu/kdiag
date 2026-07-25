@@ -78,7 +78,8 @@ export function NetworkPage() {
     <div><Typography variant="h4">{l("网络路径诊断", "Network path diagnosis")}</Typography>
       <Typography color="text.secondary">{l("逐层检查请求从哪里出发、经过什么、最终卡在哪里。", "Check every hop to see where a request starts, what it crosses and where it is blocked.")}</Typography></div>
     <Alert severity="info">{l("主动探测默认关闭。没有实际流量与 CNI 证据时，静态检查通过也只会显示“实际连通性未验证”。", "Active probes are off by default. Static checks cannot prove real connectivity without traffic or CNI evidence.")}</Alert>
-    <Box sx={{display: "flex", gap: .7, alignItems: "center", overflowX: "auto", pb: .5}} aria-label="网络诊断路径">
+    <Box sx={{display: "flex", gap: .7, alignItems: "center", overflowX: "auto", pb: .5}}
+      aria-label={l("网络诊断路径", "Network diagnosis path")}>
       {pathLabels.map((label, index) => <Box key={label} sx={{display: "flex", alignItems: "center", gap: .7}}>
         <Chip size="small" label={label} variant={task?.report?.blockedAt && label.includes(task.report.blockedAt) ? "filled" : "outlined"}
           color={task?.report?.blockedAt && label.includes(task.report.blockedAt) ? "error" : "default"} />
@@ -102,7 +103,7 @@ export function NetworkPage() {
         helperText={servicePorts.length ? l("来自 Service spec.ports", "Read from Service spec.ports") : l("该 Service 没有声明端口", "This Service declares no ports")}
         onChange={(event) => setPort(event.target.value)}>
         {servicePorts.map((item) => <MenuItem key={`${item.name}-${item.port}`} value={String(item.port)}>
-          {item.name || "未命名"} · {item.port} → {String(item.targetPort)}
+          {item.name || l("未命名", "Unnamed")} · {item.port} → {String(item.targetPort)}
         </MenuItem>)}
       </TextField>
       <TextField select fullWidth label={l("协议", "Protocol")} value={protocol} onChange={(event) => setProtocol(event.target.value)}>

@@ -1,5 +1,9 @@
 packages:
   - web
 
+overrides:
+  brace-expansion: 5.0.8
+  minimatch@3.1.5: 10.2.5
+
 allowBuilds:
   esbuild: true

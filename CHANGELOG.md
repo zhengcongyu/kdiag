@@ -4,6 +4,27 @@ All notable changes are documented here. The format follows Keep a Changelog.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-25
+
+### Changed
+
+- Replace the ambiguous `observed` resource state with an explicit health
+  evaluation: `healthy`, `warning`, `critical`, or `unknown`.
+- Evaluate configuration resources using Kubernetes API validity and
+  kind-specific structured fields while stating runtime and traffic limitations.
+- Present unknown resources as unverified rather than implying collection
+  success or health.
+- Complete English localization across the cluster workspace, diagnosis
+  reports, network paths, topology, incidents, replay, policies, reports, and
+  settings.
+
+### Added
+
+- Add an English-mode regression test that rejects Chinese text in the main
+  cluster workspace.
+- Add localized health explanations for the supported Kubernetes resource
+  kinds.
+
 ## [0.4.2] - 2026-07-25
 
 ### Fixed

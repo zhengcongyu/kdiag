@@ -40,7 +40,7 @@ export function AppShell() {
           </Box>
           <Typography variant="h6" sx={{fontSize: 19}}>KDiag</Typography>
         </Box>
-        <List component="nav" aria-label="主导航" sx={{px: 1, pt: 1}}>
+        <List component="nav" aria-label={language === "en" ? "Main navigation" : "主导航"} sx={{px: 1, pt: 1}}>
           {navigation.map(([to, key, Icon]) => (
             <ListItemButton key={to as string} component={NavLink} to={to as string} end={to === "/"}
               sx={{borderRadius: 1.5, minHeight: 42, mb: .35, px: 1.25,
@@ -76,7 +76,7 @@ export function AppShell() {
               {connected ? t("connected") : connection?.status === "syncing" ? t("syncing") : t("unavailable")}
             </Typography>
             <Typography component="div" variant="caption" color="text.secondary" sx={{mt: .5}}>
-              {connection?.serverVersion ?? "等待集群版本"}
+              {connection?.serverVersion ?? (language === "en" ? "Waiting for cluster version" : "等待集群版本")}
             </Typography>
           </Box>
           <Select size="small" fullWidth value={language} aria-label={t("language")}
@@ -84,7 +84,7 @@ export function AppShell() {
             <MenuItem value="zh-CN">{t("chinese")}</MenuItem>
             <MenuItem value="en">{t("english")}</MenuItem>
           </Select>
-          <Typography variant="caption" color="text.secondary">KDiag v0.4.2</Typography>
+          <Typography variant="caption" color="text.secondary">KDiag v0.5.0</Typography>
         </Box>
       </Box>
       <Box component="main" sx={{ml: "188px", minWidth: 0, width: "calc(100% - 188px)"}}>

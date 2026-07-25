@@ -1,15 +1,17 @@
-import {render, screen} from "@testing-library/react";
+import {cleanup, render, screen} from "@testing-library/react";
 import {MemoryRouter} from "react-router-dom";
 import {QueryClient, QueryClientProvider} from "@tanstack/react-query";
-import {beforeEach, expect, test, vi} from "vitest";
+import {afterEach, beforeEach, expect, test, vi} from "vitest";
 
 vi.mock("echarts-for-react", () => ({
   default: () => <div aria-label="严重度图表" />
 }));
 
 import {App} from "./App";
+import {LanguageProvider} from "./i18n";
 
 beforeEach(() => {
+  localStorage.clear();
   vi.stubGlobal("fetch", vi.fn(async () => ({
     ok: true,
     json: async () => ({items: [], total: 0}),
@@ -17,10 +19,22 @@ beforeEach(() => {
     status: 200
   })));
 });
+afterEach(cleanup);
+
+test("English mode does not leave Chinese text in the cluster workspace", async () => {
+  localStorage.setItem("kdiag-language", "en");
+  const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
+  render(<QueryClientProvider client={client}><LanguageProvider><MemoryRouter><App /></MemoryRouter></LanguageProvider></QueryClientProvider>);
+  expect(await screen.findByRole("heading", {name: "Cluster"})).toBeInTheDocument();
+  const main = screen.getByRole("main");
+  expect(main).toHaveTextContent("Save view");
+  expect(main).toHaveTextContent("Status · All");
+  expect(main.textContent).not.toMatch(/[\u3400-\u9fff]/);
+});
 
 test("renders accessible cluster inventory and honest empty state", async () => {
   const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
-  render(<QueryClientProvider client={client}><MemoryRouter><App /></MemoryRouter></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><LanguageProvider><MemoryRouter><App /></MemoryRouter></LanguageProvider></QueryClientProvider>);
   expect(await screen.findByRole("heading", {name: "集群全景"})).toBeInTheDocument();
   expect(await screen.findByText(/缺少数据不会被当作健康/)).toBeInTheDocument();
   expect(screen.getByRole("textbox", {name: "搜索资源"})).toBeInTheDocument();
@@ -52,8 +66,8 @@ test("diagnosis resource names come from the live inventory selector", async () 
     return {ok: true, json: async () => body, headers: new Headers(), status: 200};
   }));
   const client = new QueryClient({defaultOptions: {queries: {retry: false}}});
-  render(<QueryClientProvider client={client}>
-    <MemoryRouter initialEntries={["/diagnose"]}><App /></MemoryRouter>
+  render(<QueryClientProvider client={client}><LanguageProvider>
+    <MemoryRouter initialEntries={["/diagnose"]}><App /></MemoryRouter></LanguageProvider>
   </QueryClientProvider>);
   expect(await screen.findByRole("heading", {name: "资源智能诊断"})).toBeInTheDocument();
   expect(await screen.findByText(/实时读取，共 1 项/)).toBeInTheDocument();

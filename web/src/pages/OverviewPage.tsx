@@ -21,12 +21,14 @@ export function OverviewPage() {
   return <Stack spacing={3}>
     <div><Typography variant="h4">{t("clusterHealth")}</Typography>
       <Typography color="text.secondary">{t("clusterHealthSubtitle")}</Typography></div>
-    {(states.observed ?? 0) > 0 ? <Alert severity="info">{t("collectedMeaning")}</Alert> : null}
+    {(states.unknown ?? 0) > 0 ? <Alert severity="info">
+      {t("unknownCount", {value: states.unknown ?? 0})}
+    </Alert> : null}
     {overview.access.status === "partial" ? <Alert severity="warning">{t("permissionDeniedMeaning")}</Alert> : null}
     <Grid container spacing={1.5}>
       <Grid size={{xs: 6, md: 3}}><Summary title={t("critical")} value={states.critical ?? 0} tone="#c43228" /></Grid>
       <Grid size={{xs: 6, md: 3}}><Summary title={t("warning")} value={states.warning ?? 0} tone="#9a5b00" /></Grid>
-      <Grid size={{xs: 6, md: 3}}><Summary title={t("observed")} value={states.observed ?? 0} tone="#44617b" /></Grid>
+      <Grid size={{xs: 6, md: 3}}><Summary title={t("unknown")} value={states.unknown ?? 0} tone="#6e6e73" /></Grid>
       <Grid size={{xs: 6, md: 3}}><Summary title={t("healthy")} value={states.healthy ?? 0} tone="#16833d" /></Grid>
     </Grid>
     <Grid container spacing={2}>
@@ -37,7 +39,7 @@ export function OverviewPage() {
           series: [{type: "pie", radius: ["48%", "72%"], data: [
             {name: t("critical"), value: states.critical ?? 0, itemStyle: {color: "#d94a40"}},
             {name: t("warning"), value: states.warning ?? 0, itemStyle: {color: "#d9982f"}},
-            {name: t("observed"), value: states.observed ?? 0, itemStyle: {color: "#7b93a8"}},
+            {name: t("unknown"), value: states.unknown ?? 0, itemStyle: {color: "#7b93a8"}},
             {name: t("healthy"), value: states.healthy ?? 0, itemStyle: {color: "#2c9b50"}}
           ]}]
         }} />
@@ -68,5 +70,5 @@ function Summary({title, value, tone}: {title: string; value: number; tone: stri
 function Area({title, count}: {title: string; count: number}) {
   const {t} = useLanguage();
   return <Card variant="outlined"><CardContent><Typography sx={{fontWeight: 700}}>{title}</Typography>
-    <Typography color="text.secondary">{t("collectedResources", {value: count})}</Typography></CardContent></Card>;
+    <Typography color="text.secondary">{t("assessedResources", {value: count})}</Typography></CardContent></Card>;
 }

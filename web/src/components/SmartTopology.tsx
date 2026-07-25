@@ -8,6 +8,7 @@ import {
   CheckCircleOutline, ErrorOutline, HelpOutline, ReportProblemOutlined
 } from "@mui/icons-material";
 import type {GraphSnapshot, ResourceState, TopologyNodeState} from "../types";
+import {useLanguage} from "../i18n";
 
 const meta: Record<string, {label: string; color: string; bg: string; Icon: typeof CheckCircleOutline}> = {
   critical: {label: "故障", color: "#c43228", bg: "#fff0ef", Icon: ErrorOutline},
@@ -16,10 +17,10 @@ const meta: Record<string, {label: string; color: string; bg: string; Icon: type
   affected: {label: "受影响", color: "#6f42c1", bg: "#f5f0ff", Icon: ReportProblemOutlined},
   healthy: {label: "健康", color: "#16833d", bg: "#edf8f0", Icon: CheckCircleOutline},
   unknown: {label: "未知", color: "#6e6e73", bg: "#f2f2f7", Icon: HelpOutline},
-  observed: {label: "已采集", color: "#44617b", bg: "#eef4f8", Icon: HelpOutline}
 };
 
 export function SmartTopology({topology, height = 520}: {topology?: GraphSnapshot; height?: number}) {
+  const {l, localize} = useLanguage();
   const [focusIssues, setFocusIssues] = useState(false);
   const [selectedUID, setSelectedUID] = useState("");
   const states = useMemo(() => new Map(
@@ -53,57 +54,62 @@ export function SmartTopology({topology, height = 520}: {topology?: GraphSnapsho
       data: {label: <Stack spacing={.55} sx={{textAlign: "left"}}>
         <Stack direction="row" gap={.7} alignItems="center">
           <style.Icon sx={{fontSize: 17, color: style.color}} />
-          <Typography variant="caption" sx={{color: style.color, fontWeight: 700}}>{style.label}</Typography>
+          <Typography variant="caption" sx={{color: style.color, fontWeight: 700}}>
+            {stateLabel(state.state, l)}</Typography>
           <Typography variant="caption" color="text.secondary" sx={{ml: "auto"}}>{resource.kind}</Typography>
         </Stack>
         <Typography noWrap sx={{fontWeight: 700}} title={resource.name}>{resource.name}</Typography>
-        <Typography variant="caption" color="text.secondary" noWrap>{state.stateText || "尚未评估"}</Typography>
+        <Typography variant="caption" color="text.secondary" noWrap>
+          {localize(state.stateText) || l("尚未评估", "Not evaluated")}</Typography>
       </Stack>}
     };
-  }), [selectedUID, states, topology, visibleUIDs]);
+  }), [l, localize, selectedUID, states, topology, visibleUIDs]);
   const edges = useMemo(() => (topology?.edges ?? [])
     .filter((edge) => visibleUIDs.has(edge.from.uid) && visibleUIDs.has(edge.to.uid))
     .map((edge, index) => {
       const unhealthy = states.get(edge.from.uid)?.state === "critical" || states.get(edge.to.uid)?.state === "critical";
       return {
         id: `${index}-${edge.from.uid}-${edge.to.uid}`, source: edge.from.uid, target: edge.to.uid,
-        label: relationLabel(edge.relation), markerEnd: {type: MarkerType.ArrowClosed},
+        label: relationLabel(edge.relation, l), markerEnd: {type: MarkerType.ArrowClosed},
         animated: false, style: {stroke: unhealthy ? "#c43228" : "#a8adb7", strokeWidth: unhealthy ? 2.2 : 1.2},
         labelStyle: {fontSize: 11, fill: unhealthy ? "#c43228" : "#6e6e73"}
       };
-    }), [states, topology, visibleUIDs]);
+  }), [l, states, topology, visibleUIDs]);
   const selected = states.get(selectedUID);
 
   if (!topology?.nodes?.length) {
     return <Card variant="outlined"><CardContent>
-      <Typography color="text.secondary">当前没有可展示的拓扑数据。缺少关系不代表资源一定没有外部依赖。</Typography>
+      <Typography color="text.secondary">{l(
+        "当前没有可展示的拓扑数据。缺少关系不代表资源一定没有外部依赖。",
+        "No topology data is available. Missing graph edges do not prove that a resource has no external dependencies."
+      )}</Typography>
     </CardContent></Card>;
   }
   return <Stack spacing={1.5}>
     <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
-      {Object.entries(meta).filter(([key]) => ["critical", "warning", "affected", "healthy", "observed", "unknown"].includes(key))
+      {Object.entries(meta).filter(([key]) => ["critical", "warning", "affected", "healthy", "unknown"].includes(key))
         .map(([key, item]) => <Chip key={key} size="small" icon={<item.Icon />}
-          label={item.label} sx={{color: item.color, bgcolor: item.bg, "& .MuiChip-icon": {color: item.color}}} />)}
+          label={stateLabel(key, l)} sx={{color: item.color, bgcolor: item.bg, "& .MuiChip-icon": {color: item.color}}} />)}
       <Button size="small" variant={focusIssues ? "contained" : "outlined"} sx={{ml: "auto"}}
         onClick={() => setFocusIssues((value) => !value)}>
-        {focusIssues ? "显示完整局部图" : "只看故障链路"}
+        {focusIssues ? l("显示完整局部图", "Show full local graph") : l("只看故障链路", "Focus on failure path")}
       </Button>
     </Stack>
     <Box sx={{height, border: "1px solid", borderColor: "divider", borderRadius: 3, overflow: "hidden", bgcolor: "#fbfcfe"}}>
       <ReactFlow nodes={nodes} edges={edges} fitView minZoom={.35} maxZoom={1.5}
-        onNodeClick={(_, node) => setSelectedUID(node.id)} aria-label="资源健康拓扑图">
+        onNodeClick={(_, node) => setSelectedUID(node.id)} aria-label={l("资源健康拓扑图", "Resource health topology")}>
         <Background gap={22} size={1} color="#e7e9ee" /><Controls />
       </ReactFlow>
     </Box>
     {selected ? <Card variant="outlined"><CardContent>
       <Stack direction={{xs: "column", md: "row"}} gap={2} alignItems={{md: "center"}}>
         <Box sx={{flex: 1}}>
-          <Typography variant="overline">所选资源</Typography>
+          <Typography variant="overline">{l("所选资源", "Selected resource")}</Typography>
           <Typography variant="h6">{selected.resource.kind}/{selected.resource.name}</Typography>
-          <Typography color="text.secondary">{selected.summary || selected.stateText}</Typography>
+          <Typography color="text.secondary">{localize(selected.summary || selected.stateText)}</Typography>
         </Box>
         <Divider orientation="vertical" flexItem />
-        <Typography sx={{fontWeight: 650}}>状态：{selected.stateText}</Typography>
+        <Typography sx={{fontWeight: 650}}>{l("状态", "Status")}: {localize(selected.stateText)}</Typography>
       </Stack>
     </CardContent></Card> : null}
   </Stack>;
@@ -122,9 +128,18 @@ function kindColumn(kind: string) {
   return 2;
 }
 
-function relationLabel(value: string) {
+function relationLabel(value: string, l: (zh: string, en: string) => string) {
   return ({
-    owns: "拥有", selects: "选择", "represented-by": "对应端点",
-    "scheduled-on": "调度到", mounts: "挂载"
+    owns: l("拥有", "owns"), selects: l("选择", "selects"),
+    "represented-by": l("对应端点", "represented by"),
+    "scheduled-on": l("调度到", "scheduled on"), mounts: l("挂载", "mounts")
+  } as Record<string, string>)[value] ?? value;
+}
+
+function stateLabel(value: string, l: (zh: string, en: string) => string) {
+  return ({
+    critical: l("故障", "Critical"), warning: l("需关注", "Warning"),
+    suspected: l("疑似", "Suspected"), affected: l("受影响", "Affected"),
+    healthy: l("健康", "Healthy"), unknown: l("未知", "Unknown")
   } as Record<string, string>)[value] ?? value;
 }

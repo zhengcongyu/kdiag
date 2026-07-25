@@ -12,16 +12,16 @@ import type {
 import {SmartTopology} from "./SmartTopology";
 import {useLanguage} from "../i18n";
 
-const outcomeMeta: Record<CheckOutcome, {label: string; color: "success" | "error" | "warning" | "default"; icon: React.ReactElement}> = {
-  PASSED: {label: "正常", color: "success", icon: <CheckCircleOutline fontSize="small" />},
-  FAILED: {label: "阻断", color: "error", icon: <ErrorOutline fontSize="small" />},
-  SUSPECTED: {label: "疑似", color: "warning", icon: <WarningAmberOutlined fontSize="small" />},
-  UNKNOWN: {label: "未验证", color: "default", icon: <HelpOutline fontSize="small" />},
-  SKIPPED: {label: "未执行", color: "default", icon: <HelpOutline fontSize="small" />}
+const outcomeMeta: Record<CheckOutcome, {color: "success" | "error" | "warning" | "default"; icon: React.ReactElement}> = {
+  PASSED: {color: "success", icon: <CheckCircleOutline fontSize="small" />},
+  FAILED: {color: "error", icon: <ErrorOutline fontSize="small" />},
+  SUSPECTED: {color: "warning", icon: <WarningAmberOutlined fontSize="small" />},
+  UNKNOWN: {color: "default", icon: <HelpOutline fontSize="small" />},
+  SKIPPED: {color: "default", icon: <HelpOutline fontSize="small" />}
 };
 
 export function DiagnosisReportView({task, live = false}: {task: DiagnosisTask; live?: boolean}) {
-  const {language} = useLanguage();
+  const {language, l, localize} = useLanguage();
   const report = task.report;
   if (!report) {
     return <LiveProgress task={task} live={live} />;
@@ -44,7 +44,7 @@ export function DiagnosisReportView({task, live = false}: {task: DiagnosisTask; 
       <CardContent sx={{p: {xs: 2.5, md: 3.5}}}>
         <Stack direction="row" alignItems="center" gap={1} sx={{mb: 1}}>
           <Chip size="small" label={verdictLabel(report, language)} color={report.verdict === "CONFIRMED_ISSUE" ? "error" : "warning"} />
-          {live ? <Chip size="small" variant="outlined" label="实时诊断" /> : null}
+          {live ? <Chip size="small" variant="outlined" label={l("实时诊断", "Live diagnosis")} /> : null}
         </Stack>
         <Typography variant="h4" component="h1">{localHeadline(report, language)}</Typography>
         <Typography sx={{mt: 1, fontSize: 17}}>{localSummary(report, language)}</Typography>
@@ -52,7 +52,9 @@ export function DiagnosisReportView({task, live = false}: {task: DiagnosisTask; 
         <Grid container spacing={2}>
           <Grid size={{xs: 12, md: 4}}><Fact title={language === "zh-CN" ? "影响" : "Impact"} value={language === "zh-CN" ? report.impact : "The target resource or request path may be affected."} /></Grid>
           <Grid size={{xs: 12, md: 4}}><Fact title={language === "zh-CN" ? "定位" : "Location"} value={report.blockedAt ? (language === "zh-CN" ? `问题卡在 ${report.blockedAt}` : `Blocked at ${report.blockedAt}`) : (language === "zh-CN" ? "未发现明确阻断点" : "No confirmed blocking point")} /></Grid>
-          <Grid size={{xs: 12, md: 4}}><Fact title={language === "zh-CN" ? "最可能根因" : "Most likely cause"} value={report.rootCause || (language === "zh-CN" ? "证据不足，暂不能确定" : "Insufficient evidence")} /></Grid>
+          <Grid size={{xs: 12, md: 4}}><Fact title={l("最可能根因", "Most likely cause")}
+            value={language === "zh-CN" ? report.rootCause || "证据不足，暂不能确定"
+              : localize(report.rootCause) || "Insufficient evidence"} /></Grid>
         </Grid>
       </CardContent>
     </Card>
@@ -65,46 +67,54 @@ export function DiagnosisReportView({task, live = false}: {task: DiagnosisTask; 
     <Section title={language === "zh-CN" ? "排查链路" : "Diagnostic path"} subtitle={language === "zh-CN" ? `已完成 ${report.coverage.checked}/${report.coverage.total} 项可用检查` : `${report.coverage.checked}/${report.coverage.total} checks completed`}>
       <TroubleshootingChain steps={task.steps ?? []} />
     </Section>
-    {confirmedIssues.length || suspectedIssues.length ? <Section title="诊断结论" subtitle="先看结论，需要时再展开技术证据">
+    {confirmedIssues.length || suspectedIssues.length ? <Section title={l("诊断结论", "Diagnosis findings")}
+      subtitle={l("先看结论，需要时再展开技术证据", "Start with the findings, then expand technical evidence when needed")}>
       <Stack spacing={1}>{[...confirmedIssues, ...suspectedIssues].map((issue) =>
         <Alert key={issue.code} severity={issue.outcome === "FAILED" ? "error" : "warning"}>
-          <Typography sx={{fontWeight: 700}}>{issue.title}</Typography>
-          <Typography>{issue.summary}</Typography>
+          <Typography sx={{fontWeight: 700}}>{localize(issue.title)}</Typography>
+          <Typography>{localize(issue.summary)}</Typography>
           {issue.problemAt ? <Typography sx={{mt: 1}}>
-            <strong>问题位置：</strong>{issue.problemAt}
+            <strong>{l("问题位置", "Problem location")}:</strong> {localize(issue.problemAt)}
           </Typography> : null}
           {issue.possibleCauses?.length ? <Box sx={{mt: 1}}>
-            <Typography sx={{fontWeight: 650}}>常见原因</Typography>
-            {issue.possibleCauses.map((cause) => <Typography key={cause}>• {cause}</Typography>)}
+            <Typography sx={{fontWeight: 650}}>{l("常见原因", "Common causes")}</Typography>
+            {issue.possibleCauses.map((cause) => <Typography key={cause}>• {localize(cause)}</Typography>)}
           </Box> : null}
         </Alert>)}</Stack>
     </Section> : null}
     <Section title={language === "zh-CN" ? "推荐排错方法" : "Recommended troubleshooting"} subtitle={language === "zh-CN" ? "按顺序执行以下只读检查；每一步都说明正常结果和异常时的下一步。" : "Run these read-only checks in order. Each step explains the expected result and what to do when it is abnormal."}>
       <TroubleshootingGuide actions={report.troubleshooting ?? []} language={language} />
     </Section>
-    <Section title="安全修复建议" subtitle="只提供建议与变更预览，不会自动修改集群">
+    <Section title={l("安全修复建议", "Safe remediation")}
+      subtitle={l("只提供建议与变更预览，不会自动修改集群",
+        "KDiag provides guidance and change previews but never mutates the cluster")}>
       <Stack spacing={1}>{remediation.map((item, index) =>
-        <Alert key={`${index}-${item}`} severity="info"><strong>{index + 1}.</strong> {item}</Alert>)}</Stack>
-      <Typography variant="h6" sx={{mt: 2}}>修复后验证</Typography>
+        <Alert key={`${index}-${item}`} severity="info"><strong>{index + 1}.</strong> {localize(item)}</Alert>)}</Stack>
+      <Typography variant="h6" sx={{mt: 2}}>{l("修复后验证", "Post-fix verification")}</Typography>
       <Stack spacing={.7} sx={{mt: 1}}>{verification.map((item) =>
-        <Typography key={item}>• {item}</Typography>)}</Stack>
+        <Typography key={item}>• {localize(item)}</Typography>)}</Stack>
     </Section>
     <Accordion>
-      <AccordionSummary expandIcon={<ExpandMore />}><Typography sx={{fontWeight: 700}}>能力覆盖与限制</Typography></AccordionSummary>
+      <AccordionSummary expandIcon={<ExpandMore />}><Typography sx={{fontWeight: 700}}>
+        {l("能力覆盖与限制", "Coverage and limitations")}</Typography></AccordionSummary>
       <AccordionDetails><Stack spacing={1}>
-        <Typography>已使用：{(report.coverage?.capabilities ?? []).join("、") || "没有可用能力"}</Typography>
-        {limitations.map((item) => <Alert key={item} severity="warning">{item}</Alert>)}
+        <Typography>{l("已使用", "Used")}: {(report.coverage?.capabilities ?? []).join(", ") || l("没有可用能力", "No capabilities available")}</Typography>
+        {limitations.map((item) => <Alert key={item} severity="warning">{localize(item)}</Alert>)}
       </Stack></AccordionDetails>
     </Accordion>
     <Accordion>
-      <AccordionSummary expandIcon={<ExpandMore />}><Typography sx={{fontWeight: 700}}>技术证据与规则详情</Typography></AccordionSummary>
+      <AccordionSummary expandIcon={<ExpandMore />}><Typography sx={{fontWeight: 700}}>
+        {l("技术证据与规则详情", "Technical evidence and rules")}</Typography></AccordionSummary>
       <AccordionDetails><EvidenceList evidence={task.evidence ?? []} /></AccordionDetails>
     </Accordion>
-    {report.topology?.nodes?.length ? <Section title="故障资源拓扑" subtitle="红色为故障，绿色为健康，灰色表示尚未确认">
+    {report.topology?.nodes?.length ? <Section title={l("故障资源拓扑", "Incident resource topology")}
+      subtitle={l("红色为故障，绿色为健康，灰色表示尚未确认",
+        "Red is critical, green is healthy, and gray is unverified")}>
       <SmartTopology topology={report.topology} height={440} />
     </Section> : null}
     <Accordion>
-      <AccordionSummary expandIcon={<ExpandMore />}><Typography sx={{fontWeight: 700}}>原始诊断数据（技术人员）</Typography></AccordionSummary>
+      <AccordionSummary expandIcon={<ExpandMore />}><Typography sx={{fontWeight: 700}}>
+        {l("原始诊断数据（技术人员）", "Raw diagnosis data (technical)")}</Typography></AccordionSummary>
       <AccordionDetails><Box component="pre" sx={{whiteSpace: "pre-wrap", fontSize: 12, bgcolor: "#f7f7f9", p: 2, borderRadius: 2}}>
         {JSON.stringify(task, null, 2)}
       </Box></AccordionDetails>
@@ -113,8 +123,12 @@ export function DiagnosisReportView({task, live = false}: {task: DiagnosisTask; 
 }
 
 function TroubleshootingGuide({actions, language}: {actions: TroubleshootingAction[]; language: "zh-CN" | "en"}) {
+  const {l} = useLanguage();
   if (!actions.length) {
-    return <Alert severity="warning">当前报告还没有可执行的排错步骤。请先补充“未验证”项所需证据，不要直接修改资源。</Alert>;
+    return <Alert severity="warning">{l(
+      "当前报告还没有可执行的排错步骤。请先补充“未验证”项所需证据，不要直接修改资源。",
+      "This report has no executable troubleshooting steps yet. Collect the evidence required by unverified checks before changing resources."
+    )}</Alert>;
   }
   return <Stack spacing={1.5}>{actions.map((action, index) =>
     <Card variant="outlined" key={`${action.title}-${action.command ?? index}`} sx={{borderRadius: 2.5}}>
@@ -131,7 +145,7 @@ function TroubleshootingGuide({actions, language}: {actions: TroubleshootingActi
             size="small"
             variant="outlined"
             startIcon={<ContentCopyOutlined />}
-            aria-label={`复制命令：${action.title}`}
+            aria-label={`${l("复制命令", "Copy command")}: ${localActionTitle(action.title, language)}`}
             onClick={() => void navigator.clipboard.writeText(action.command ?? "")}
           >{language === "zh-CN" ? "复制命令" : "Copy command"}</Button> : null}
         </Stack>
@@ -161,12 +175,18 @@ function TroubleshootingGuide({actions, language}: {actions: TroubleshootingActi
 }
 
 function LiveProgress({task, live}: {task: DiagnosisTask; live: boolean}) {
+  const {l, localize} = useLanguage();
   return <Card variant="outlined"><CardContent>
     <Stack direction="row" gap={1} alignItems="center">
       <RouteOutlined color="primary" />
-      <Box><Typography variant="h6">{task.status === "FAILED" ? "诊断未能完成" : "正在自动收集并分析证据"}</Typography>
+      <Box><Typography variant="h6">{task.status === "FAILED"
+        ? l("诊断未能完成", "Diagnosis could not complete")
+        : l("正在自动收集并分析证据", "Collecting and analyzing evidence")}</Typography>
         <Typography color="text.secondary">
-          {task.error || (live ? "结果会在同一页面实时更新，不需要阅读原始 YAML。" : "正在恢复诊断结果…")}
+          {localize(task.error) || (live
+            ? l("结果会在同一页面实时更新，不需要阅读原始 YAML。",
+              "Results update on this page; you do not need to inspect raw YAML.")
+            : l("正在恢复诊断结果…", "Restoring diagnosis results…"))}
         </Typography></Box>
     </Stack>
     <TroubleshootingChain steps={task.steps ?? []} />
@@ -174,30 +194,36 @@ function LiveProgress({task, live}: {task: DiagnosisTask; live: boolean}) {
 }
 
 function TroubleshootingChain({steps}: {steps: DiagnosisStep[]}) {
-  if (!steps.length) return <Typography color="text.secondary" sx={{mt: 2}}>等待第一项检查开始…</Typography>;
+  const {l, localize} = useLanguage();
+  if (!steps.length) return <Typography color="text.secondary" sx={{mt: 2}}>
+    {l("等待第一项检查开始…", "Waiting for the first check…")}</Typography>;
   return <Stack spacing={1.1} sx={{mt: 1.5}}>{steps.map((step, index) => {
     const outcome = step.outcome ?? (step.status === "RUNNING" ? "UNKNOWN" : "UNKNOWN");
     const current = outcomeMeta[outcome];
     return <Stack key={step.id} direction="row" gap={1.3} alignItems="flex-start"
       sx={{p: 1.5, border: "1px solid", borderColor: outcome === "FAILED" ? "error.light" : "divider", borderRadius: 2.5}}>
       <Typography sx={{width: 24, height: 24, borderRadius: "50%", bgcolor: "#f2f2f7", textAlign: "center", lineHeight: "24px", fontWeight: 700}}>{index + 1}</Typography>
-      <Box sx={{flex: 1}}><Typography sx={{fontWeight: 700}}>{step.name}</Typography>
-        <Typography color="text.secondary">{step.summary || "正在检查…"}</Typography></Box>
-      <Chip size="small" icon={current.icon} color={current.color} label={current.label} variant="outlined" />
+      <Box sx={{flex: 1}}><Typography sx={{fontWeight: 700}}>{localize(step.name)}</Typography>
+        <Typography color="text.secondary">{localize(step.summary) || l("正在检查…", "Checking…")}</Typography></Box>
+      <Chip size="small" icon={current.icon} color={current.color}
+        label={outcomeLabel(outcome, l)} variant="outlined" />
     </Stack>;
   })}</Stack>;
 }
 
 function EvidenceList({evidence}: {evidence: Evidence[]}) {
-  if (!evidence.length) return <Alert severity="warning">没有可用证据；这不能解释为资源正常。</Alert>;
+  const {l, localize} = useLanguage();
+  if (!evidence.length) return <Alert severity="warning">
+    {l("没有可用证据；这不能解释为资源正常。", "No evidence is available; this must not be interpreted as healthy.")}</Alert>;
   return <Stack spacing={1}>{evidence.map((item) =>
     <Card key={item.id} variant="outlined"><CardContent>
       <Stack direction="row" gap={1} alignItems="center">
-        <Chip size="small" label={roleLabel(item.role)} />
-        <Typography sx={{fontWeight: 650}}>{item.summary}</Typography>
+        <Chip size="small" label={roleLabel(item.role, l)} />
+        <Typography sx={{fontWeight: 650}}>{localize(item.summary)}</Typography>
       </Stack>
       <Typography variant="body2" color="text.secondary" sx={{mt: 1}}>
-        来源：{item.source} · 可信度：{Math.round(item.confidence * 100)}% · 原始引用：{item.rawRef || "未保存"}
+        {l("来源", "Source")}: {item.source} · {l("可信度", "Confidence")}: {Math.round(item.confidence * 100)}% ·
+        {" "}{l("原始引用", "Raw reference")}: {item.rawRef || l("未保存", "Not saved")}
       </Typography>
     </CardContent></Card>)}</Stack>;
 }
@@ -270,6 +296,17 @@ function verdictColor(report: DiagnosisReport) {
 function verdictBackground(report: DiagnosisReport) {
   return report.verdict === "CONFIRMED_ISSUE" ? "#fffafa" : report.verdict === "NO_ISSUE_FOUND" ? "#f8fcf9" : "#fffdf7";
 }
-function roleLabel(role: Evidence["role"]) {
-  return ({supporting: "支持问题", contradicting: "反证 / 正常", missing: "缺失", neutral: "事实"} as const)[role];
+function roleLabel(role: Evidence["role"], l: (zh: string, en: string) => string) {
+  return ({
+    supporting: l("支持问题", "Supporting"), contradicting: l("反证 / 正常", "Contradicting / healthy"),
+    missing: l("缺失", "Missing"), neutral: l("事实", "Neutral")
+  } as const)[role];
+}
+
+function outcomeLabel(outcome: CheckOutcome, l: (zh: string, en: string) => string) {
+  return ({
+    PASSED: l("正常", "Passed"), FAILED: l("阻断", "Failed"),
+    SUSPECTED: l("疑似", "Suspected"), UNKNOWN: l("未验证", "Unverified"),
+    SKIPPED: l("未执行", "Skipped")
+  } as const)[outcome];
 }

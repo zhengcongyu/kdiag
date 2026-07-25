@@ -14,8 +14,7 @@ import {useLanguage} from "../i18n";
 const supportedKinds = ["Deployment", "Pod", "Service", "Node", "PersistentVolumeClaim"];
 
 export function DiagnosePage() {
-  const {language} = useLanguage();
-  const l = (zh: string, en: string) => language === "zh-CN" ? zh : en;
+  const {l, localize} = useLanguage();
   const {id = ""} = useParams();
   const navigate = useNavigate();
   const overview = useQuery({
@@ -85,9 +84,9 @@ export function DiagnosePage() {
       <ResourcePicker kind={kind} namespace={kind === "Node" ? undefined : namespace}
         label={l("资源名称", "Resource")} value={resource?.ref.uid ?? ""} onChange={setResource} />
       {resource ? <Stack direction="row" gap={1} flexWrap="wrap">
-        <Chip size="small" label={resource.stateText} color={resource.state === "healthy" ? "success" : "warning"} />
-        <Chip size="small" label={resource.summary || "等待诊断"} variant="outlined" />
-        {resource.node ? <Chip size="small" label={`节点 ${resource.node}`} /> : null}
+        <Chip size="small" label={localize(resource.stateText)} color={resource.state === "healthy" ? "success" : "warning"} />
+        <Chip size="small" label={localize(resource.summary) || l("等待诊断", "Awaiting diagnosis")} variant="outlined" />
+        {resource.node ? <Chip size="small" label={`${l("节点", "Node")} ${resource.node}`} /> : null}
       </Stack> : null}
       <Button variant="contained" onClick={run} disabled={!resource}>{l("开始自动诊断", "Start diagnosis")}</Button>
     </Stack></CardContent></Card>

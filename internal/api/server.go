@@ -146,7 +146,7 @@ func (s *Server) clusterOverview(w http.ResponseWriter, _ *http.Request) {
 		"coverage": map[string]any{
 			"source":  "Kubernetes API Informer/List-Watch",
 			"secrets": false,
-			"message": "展示受支持的非敏感 Kubernetes 资源。已采集但没有通用健康条件的资源会标记为 observed，不会显示为健康。",
+			"message": "展示受支持的非敏感 Kubernetes 资源，并为每个对象计算健康状态；缺少结构化健康证据时标记为 unknown，不会显示为健康。",
 		},
 		"access": s.inventory.Access(),
 	})
